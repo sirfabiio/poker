@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+/* ---------- Tokens de design ---------- */
+:root {
+  --felt-900: #06231a;
+  --felt-700: #0b3b2c;
+  --felt-500: #136548;
+  --ink: #0a0d0c;
+  --ivory: #f5f1e6;
+  --gold: #d4af37;
+  --gold-soft: #f0d98a;
+  --chip-red: #c8243b;
+  --chip-blue: #2456c8;
+  --win: #3ddc97;
+  --loss: #ff5c6c;
+  /* Variante clara de --loss para texto pequeno sobre vidro (contraste ≥ 4.5:1). */
+  --loss-soft: #ffa3ac;
+
+  --glass-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)), var(--felt-700);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-felt-900: var(--felt-900);
+  --color-felt-700: var(--felt-700);
+  --color-felt-500: var(--felt-500);
+  --color-ink: var(--ink);
+  --color-ivory: var(--ivory);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-chip-red: var(--chip-red);
+  --color-chip-blue: var(--chip-blue);
+  --color-win: var(--win);
+  --color-loss: var(--loss);
+  --color-loss-soft: var(--loss-soft);
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html {
+  background: var(--felt-900);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  min-height: 100dvh;
+  color: var(--ivory);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.45;
+  background: radial-gradient(120% 80% at 50% 0%, var(--felt-700), var(--felt-900)) fixed;
+  overflow-x: hidden;
+}
+
+/* Todos os valores monetários */
+.money {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- Vidro "lite" (sem blur) ---------- */
+.glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-hi), var(--shadow);
+}
+
+/* ---------- Fichas ---------- */
+.chip {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 9999px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  outline: 2px dashed rgba(255, 255, 255, 0.75);
+  outline-offset: -5px;
+  user-select: none;
+}
+.chip-red { background: var(--chip-red); color: var(--ivory); }
+.chip-blue { background: var(--chip-blue); color: var(--ivory); }
+.chip-gold { background: var(--gold); color: var(--ink); outline-color: rgba(10, 13, 12, 0.55); }
+.chip-green { background: var(--felt-500); color: var(--ivory); }
+.chip-ink { background: var(--ink); color: var(--ivory); }
+.chip-ivory { background: var(--ivory); color: var(--ink); outline-color: rgba(10, 13, 12, 0.5); }
+.chip-silver { background: #c9ccd1; color: var(--ink); outline-color: rgba(10, 13, 12, 0.5); }
+.chip-bronze { background: #b0703c; color: var(--ink); outline-color: rgba(10, 13, 12, 0.5); }
+
+.stack-disc {
+  position: absolute;
+  left: 0;
+  width: 28px;
+  height: 10px;
+  border-radius: 9999px;
+  border: 1px dashed rgba(255, 255, 255, 0.7);
+}
+
+/* ---------- Talões ---------- */
+.ticket {
+  border: 1.5px dashed rgba(240, 217, 138, 0.55);
+  border-radius: 18px;
+  background: var(--glass-bg);
+}
+.stamp {
+  transform: rotate(-12deg);
+  border: 2px solid var(--gold-soft);
+  color: var(--gold-soft);
+  border-radius: 8px;
+  letter-spacing: 0.18em;
+}
+
+/* ---------- Folhas (bottom sheet com <dialog>) ---------- */
+dialog.sheet {
+  margin: auto auto 0;
+  width: 100%;
+  max-width: 560px;
+  max-height: 88dvh;
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-hi), var(--shadow);
+  color: var(--ivory);
+  transform: translateY(0);
+  opacity: 1;
+  transition: transform 220ms ease-out, opacity 220ms ease-out, overlay 220ms allow-discrete, display 220ms allow-discrete;
+}
+dialog.sheet:not([open]) {
+  transform: translateY(100%);
+  opacity: 0;
+}
+@starting-style {
+  dialog.sheet[open] {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+dialog.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 1;
+  transition: opacity 220ms ease-out, overlay 220ms allow-discrete, display 220ms allow-discrete;
+}
+@starting-style {
+  dialog.sheet[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+/* ---------- Movimento (só transform/opacity) ---------- */
+@keyframes page-in {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+.page-in {
+  animation: page-in 180ms ease-out both;
+}
+@keyframes chip-drop {
+  0% { transform: translateY(0); opacity: 0; }
+  45% { transform: translateY(-22px); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.chip-drop {
+  animation: chip-drop 240ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Listas longas: o browser salta o render do que está fora do ecrã */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 76px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-soft);
+  outline-offset: 2px;
+}

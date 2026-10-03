@@ -1,0 +1,125 @@
+// Valores monetários: SEMPRE inteiros em cêntimos.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // ligação pooled (app)
+  directUrl = env("DIRECT_URL") // ligação direta (migrações)
+}
+
+model Player {
+  id                String   @id @default(cuid())
+  name              String
+  /// Nome normalizado (trim + minúsculas): garante unicidade case-insensitive.
+  nameKey           String   @unique
+  avatarColor       String
+  active            Boolean  @default(true)
+  ibanOrMbway       String?
+  createdAt         DateTime @default(now())
+  createdByPlayerId String?
+
+  createdBy      Player?         @relation("PlayerCreatedBy", fields: [createdByPlayerId], references: [id], onDelete: SetNull)
+  createdPlayers Player[]        @relation("PlayerCreatedBy")
+  sessions       Session[]
+  sessionPlayers SessionPlayer[]
+  transfersOut   Transfer[]      @relation("TransferFrom")
+  transfersIn    Transfer[]      @relation("TransferTo")
+  activity       ActivityLog[]
+
+  @@index([createdByPlayerId])
+}
+
+model Session {
+  id                String   @id @default(cuid())
+  date              DateTime @db.Date
+  notes             String?
+  /// Buy-in por defeito desta sessão (cêntimos), usado no buy-in inicial e nos rebuys.
+  defaultBuyIn      Int      @default(2000)
+  createdAt         DateTime @default(now())
+  createdByPlayerId String
+  /// null = em aberto
+  settlementId      String?
+
+  createdBy  Player          @relation(fields: [createdByPlayerId], references: [id])
+  settlement Settlement?     @relation(fields: [settlementId], references: [id])
+  players    SessionPlayer[]
+
+  @@index([settlementId])
+  @@index([createdByPlayerId])
+  @@index([date])
+}
+
+model SessionPlayer {
+  id        String @id @default(cuid())
+  sessionId String
+  playerId  String
+  /// cêntimos; null até ser preenchido
+  cashOut   Int?
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  player  Player  @relation(fields: [playerId], references: [id])
+  buyIns  BuyIn[]
+
+  @@unique([sessionId, playerId])
+  @@index([playerId])
+}
+
+model BuyIn {
+  id              String   @id @default(cuid())
+  sessionPlayerId String
+  /// cêntimos
+  amount          Int
+  createdAt       DateTime @default(now())
+
+  sessionPlayer SessionPlayer @relation(fields: [sessionPlayerId], references: [id], onDelete: Cascade)
+
+  @@index([sessionPlayerId])
+}
+
+model Settlement {
+  id        String   @id @default(cuid())
+  closedAt  DateTime @default(now())
+  label     String
+
+  sessions  Session[]
+  transfers Transfer[]
+
+  @@index([closedAt])
+}
+
+model Transfer {
+  id           String    @id @default(cuid())
+  settlementId String
+  fromPlayerId String
+  toPlayerId   String
+  /// cêntimos
+  amount       Int
+  paid         Boolean   @default(false)
+  paidAt       DateTime?
+
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  from       Player     @relation("TransferFrom", fields: [fromPlayerId], references: [id])
+  to         Player     @relation("TransferTo", fields: [toPlayerId], references: [id])
+
+  @@index([settlementId])
+  @@index([fromPlayerId])
+  @@index([toPlayerId])
+}
+
+model ActivityLog {
+  id            String   @id @default(cuid())
+  actorPlayerId String
+  action        String
+  entityType    String
+  entityId      String
+  summary       String
+  createdAt     DateTime @default(now())
+
+  actor Player @relation(fields: [actorPlayerId], references: [id])
+
+  @@index([actorPlayerId])
+  @@index([createdAt])
+}
