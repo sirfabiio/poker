@@ -141,11 +141,14 @@ export default function DevUi() {
 
       <Block title="Sessão (otimista; os IDs são falsos, por isso o servidor recusa e a UI reverte)">
         <SessionLive
+          sessionId="demo"
+          isAdmin={false}
+          reconciliation={null}
           editable
           defaultBuyIn={2000}
           players={[
-            { id: "x1", playerId: "p1", name: "Ana", avatarColor: "blue", cashOut: null, buyIns: [{ id: "b1", amount: 2000 }] },
-            { id: "x2", playerId: "p2", name: "Rui", avatarColor: "red", cashOut: 3500, buyIns: [{ id: "b2", amount: 2000 }, { id: "b3", amount: 2000 }] },
+            { id: "x1", playerId: "p1", name: "Ana", avatarColor: "blue", cashOut: null, adjustment: 0, buyIns: [{ id: "b1", amount: 2000 }] },
+            { id: "x2", playerId: "p2", name: "Rui", avatarColor: "red", cashOut: 3500, adjustment: 0, buyIns: [{ id: "b2", amount: 2000 }, { id: "b3", amount: 2000 }] },
           ]}
         />
       </Block>

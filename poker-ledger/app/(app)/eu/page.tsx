@@ -81,6 +81,11 @@ export default async function Me() {
                   <span className="min-w-0">
                     <span className="block truncate capitalize">{formatDay(s.date)}</span>
                     <span className="block text-[13px] text-ivory/75">{s.open ? "Em aberto" : "Fechada"}</span>
+                    {s.adjustment !== 0 && (
+                      <span className="mt-0.5 flex items-center gap-2 text-[13px] text-ivory/75">
+                        Ajuste de contagem <Money cents={s.adjustment} signed size="sm" className="text-[13px]" />
+                      </span>
+                    )}
                   </span>
                   {s.complete ? <Money cents={s.net} signed /> : <span className="text-[13px] text-ivory/75">Em jogo</span>}
                 </Link>

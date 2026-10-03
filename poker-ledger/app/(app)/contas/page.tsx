@@ -51,7 +51,7 @@ export default async function Accounts() {
                       {" — "}
                       {s.check.missingCashOuts > 0
                         ? `faltam ${s.check.missingCashOuts} cash-out${s.check.missingCashOuts === 1 ? "" : "s"}`
-                        : `cash-outs e entradas diferem em ${formatCents(s.check.diff)}`}
+                        : `${s.check.diff > 0 ? "sobram" : "faltam"} ${formatCents(s.check.diff)} — diferença de contagem por ajustar`}
                     </li>
                   ))}
                 </ul>

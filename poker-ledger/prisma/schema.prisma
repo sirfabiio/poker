@@ -23,7 +23,9 @@ model Player {
 
   createdBy      Player?         @relation("PlayerCreatedBy", fields: [createdByPlayerId], references: [id], onDelete: SetNull)
   createdPlayers Player[]        @relation("PlayerCreatedBy")
-  sessions       Session[]
+  sessions       Session[]       @relation("SessionCreatedBy")
+  adjustedIn     Session[]       @relation("SessionAdjustmentPlayer")
+  reconciled     Session[]       @relation("SessionReconciledBy")
   sessionPlayers SessionPlayer[]
   transfersOut   Transfer[]      @relation("TransferFrom")
   transfersIn    Transfer[]      @relation("TransferTo")
@@ -43,21 +45,41 @@ model Session {
   /// null = em aberto
   settlementId      String?
 
-  createdBy  Player          @relation(fields: [createdByPlayerId], references: [id])
-  settlement Settlement?     @relation(fields: [settlementId], references: [id])
-  players    SessionPlayer[]
+  /// Diferença de contagem D = soma(cashOuts) − soma(buyIns) no momento do ajuste (null = sem ajuste)
+  discrepancy          Int?
+  adjustmentMethod     AdjustmentMethod?
+  /// Só com SINGLE_PLAYER: quem absorve a diferença
+  adjustmentPlayerId   String?
+  reconciledAt         DateTime?
+  reconciledByPlayerId String?
+
+  createdBy        Player          @relation("SessionCreatedBy", fields: [createdByPlayerId], references: [id])
+  adjustmentPlayer Player?         @relation("SessionAdjustmentPlayer", fields: [adjustmentPlayerId], references: [id])
+  reconciledBy     Player?         @relation("SessionReconciledBy", fields: [reconciledByPlayerId], references: [id])
+  settlement       Settlement?     @relation(fields: [settlementId], references: [id])
+  players          SessionPlayer[]
 
   @@index([settlementId])
   @@index([createdByPlayerId])
+  @@index([adjustmentPlayerId])
+  @@index([reconciledByPlayerId])
   @@index([date])
 }
 
+enum AdjustmentMethod {
+  EQUAL
+  PROPORTIONAL
+  SINGLE_PLAYER
+}
+
 model SessionPlayer {
-  id        String @id @default(cuid())
-  sessionId String
-  playerId  String
+  id         String @id @default(cuid())
+  sessionId  String
+  playerId   String
   /// cêntimos; null até ser preenchido
-  cashOut   Int?
+  cashOut    Int?
+  /// Ajuste de contagem (cêntimos); 0 sem ajuste
+  adjustment Int    @default(0)
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   player  Player  @relation(fields: [playerId], references: [id])
@@ -80,9 +102,9 @@ model BuyIn {
 }
 
 model Settlement {
-  id        String   @id @default(cuid())
-  closedAt  DateTime @default(now())
-  label     String
+  id       String   @id @default(cuid())
+  closedAt DateTime @default(now())
+  label    String
 
   sessions  Session[]
   transfers Transfer[]

@@ -41,6 +41,11 @@ export function verifyAdminToken(token: string | undefined, pin: string, nowMs =
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
+/** Confirma o PIN sem abrir sessão de admin (autorização pontual, ex.: ajuste acima do limite). */
+export function checkAdminPin(input: string): boolean {
+  return pinMatches(input, configuredPin());
+}
+
 export async function isAdmin(): Promise<boolean> {
   const pin = process.env.ADMIN_PIN;
   if (!pin) return false;

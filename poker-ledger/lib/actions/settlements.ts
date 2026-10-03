@@ -29,7 +29,8 @@ export async function closeAccounts(_: unknown, form: FormData): Promise<ActionR
           select: {
             id: true,
             date: true,
-            players: { select: { playerId: true, cashOut: true, buyIns: { select: { amount: true } } } },
+            reconciledAt: true,
+            players: { select: { playerId: true, cashOut: true, adjustment: true, buyIns: { select: { amount: true } } } },
           },
         });
         if (sessions.length === 0) throw new UserError("Não há sessões em aberto para fechar.");
@@ -38,7 +39,13 @@ export async function closeAccounts(_: unknown, form: FormData): Promise<ActionR
           sessions.map((s) => ({
             id: s.id,
             date: s.date,
-            players: s.players.map((p) => ({ playerId: p.playerId, cashOut: p.cashOut, buyIns: p.buyIns.map((b) => b.amount) })),
+            reconciled: s.reconciledAt !== null,
+            players: s.players.map((p) => ({
+              playerId: p.playerId,
+              cashOut: p.cashOut,
+              adjustment: p.adjustment,
+              buyIns: p.buyIns.map((b) => b.amount),
+            })),
           })),
         );
         if (summary.invalid.length > 0) {

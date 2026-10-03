@@ -5,13 +5,16 @@ import { Chip } from "@/components/ui/Chip";
 import { ChipStack } from "@/components/ui/ChipStack";
 import { Money } from "@/components/ui/Money";
 import { buttonClass } from "@/components/ui/Button";
-import { addBuyIn, removeBuyIn, removeSessionPlayer, setCashOut } from "@/lib/actions/sessions";
+import { addBuyIn, removeBuyIn, removeSessionPlayer, setCashOut, undoReconcile } from "@/lib/actions/sessions";
 import { checkSession } from "@/lib/ledger";
 import { centsToInput, formatCents, parseEuros } from "@/lib/money";
 import type { ActionResult } from "@/lib/errors";
 import { useOnline, OFFLINE_HINT } from "@/lib/use-online";
+import { exceedsSoftLimit, METHOD_LABELS, type ReconcileMethod } from "@/lib/reconcile";
+import { Sheet } from "@/components/ui/Sheet";
 import { PotTable } from "./PotTable";
 import { MoneyInput } from "./MoneyInput";
+import { ReconcileForm } from "./ReconcileForm";
 
 export type LivePlayer = {
   id: string; // SessionPlayer.id
@@ -19,16 +22,38 @@ export type LivePlayer = {
   name: string;
   avatarColor: string;
   cashOut: number | null;
+  /** ajuste de contagem (cêntimos) */
+  adjustment: number;
   buyIns: { id: string; amount: number }[];
 };
+
+export type Reconciliation = {
+  method: ReconcileMethod;
+  discrepancy: number;
+  byName: string | null;
+  playerName: string | null;
+};
+
+type State = { players: LivePlayer[]; rec: Reconciliation | null };
 
 type Op =
   | { t: "add"; sp: string; id: string; amount: number }
   | { t: "rmBuy"; sp: string; id: string }
   | { t: "cash"; sp: string; amount: number | null }
-  | { t: "rmPlayer"; sp: string };
+  | { t: "rmPlayer"; sp: string }
+  | { t: "undo" };
 
-function reduce(list: LivePlayer[], op: Op): LivePlayer[] {
+/** Qualquer alteração a entradas/cash-outs anula o ajuste (o servidor faz o mesmo). */
+const clearAdjustment = (s: State): State =>
+  s.rec ? { players: s.players.map((p) => ({ ...p, adjustment: 0 })), rec: null } : s;
+
+function reduce(state: State, op: Op): State {
+  const s = clearAdjustment(state);
+  if (op.t === "undo") return s;
+  return { ...s, players: reducePlayers(s.players, op) };
+}
+
+function reducePlayers(list: LivePlayer[], op: Exclude<Op, { t: "undo" }>): LivePlayer[] {
   if (op.t === "rmPlayer") return list.filter((p) => p.id !== op.sp);
   return list.map((p) => {
     if (p.id !== op.sp) return p;
@@ -42,15 +67,23 @@ let tmp = 0;
 
 /** Quadro da sessão com atualização otimista (rollback automático e mensagem se o servidor falhar). */
 export function SessionLive({
+  sessionId,
   players,
+  reconciliation,
   defaultBuyIn,
   editable,
+  isAdmin,
 }: {
+  sessionId: string;
   players: LivePlayer[];
+  reconciliation: Reconciliation | null;
   defaultBuyIn: number;
   editable: boolean;
+  isAdmin: boolean;
 }) {
-  const [list, apply] = useOptimistic(players, reduce);
+  const [state, apply] = useOptimistic<State, Op>({ players, rec: reconciliation }, reduce);
+  const list = state.players;
+  const rec = state.rec;
   const [, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dropFor, setDropFor] = useState<string | null>(null);
@@ -67,7 +100,11 @@ export function SessionLive({
     });
   };
 
-  const totals = checkSession(list.map((p) => ({ playerId: p.playerId, cashOut: p.cashOut, buyIns: p.buyIns.map((b) => b.amount) })));
+  const totals = checkSession(
+    list.map((p) => ({ playerId: p.playerId, cashOut: p.cashOut, adjustment: p.adjustment, buyIns: p.buyIns.map((b) => b.amount) })),
+    rec !== null,
+  );
+  const needsAdjust = totals.missingCashOuts === 0 && totals.diff !== 0 && !rec;
 
   return (
     <>
@@ -87,14 +124,71 @@ export function SessionLive({
         </div>
         <p className={`mt-1 font-semibold ${totals.valid ? "text-win" : "text-loss-soft"}`}>
           {totals.valid
-            ? "✓ Contas certas: esta sessão conta para o fecho."
+            ? rec
+              ? "✓ Diferença ajustada: esta sessão conta para o fecho."
+              : "✓ Contas certas: esta sessão conta para o fecho."
             : totals.missingCashOuts > 0
               ? `! Faltam ${totals.missingCashOuts} cash-out${totals.missingCashOuts === 1 ? "" : "s"}${
                   totals.diff !== 0 ? ` · diferença de ${totals.diff > 0 ? "+" : "−"}${formatCents(totals.diff)}` : ""
                 }.`
-              : `! Os cash-outs ${totals.diff > 0 ? "excedem" : "ficam abaixo de"} as entradas em ${formatCents(totals.diff)}. Corrige antes do fecho.`}
+              : "! Diferença de contagem por ajustar: não conta para o fecho."}
         </p>
       </div>
+
+      {needsAdjust && (
+        <section aria-label="Diferença de contagem" className="mt-4 rounded-[24px] border border-gold-soft/40 bg-ink/50 p-4">
+          <p className="text-[17px] font-semibold text-gold-soft">Recontem as fichas antes de ajustar.</p>
+          <p className="mt-1 font-display text-[22px] font-semibold">
+            {totals.diff > 0 ? "Sobram" : "Faltam"} <Money cents={Math.abs(totals.diff)} />
+          </p>
+          <p className="mt-1 text-[13px] text-ivory/80">
+            Os cash-outs {totals.diff > 0 ? "somam mais" : "somam menos"} do que as entradas. Se a recontagem confirmar, ajusta: os cash-outs
+            ficam como estão e cada jogador recebe uma linha de ajuste.
+          </p>
+          {exceedsSoftLimit(totals.diff, totals.totalIn) && (
+            <p className="mt-2 text-sm font-semibold text-loss-soft">⚠ Diferença grande: confirmar o ajuste exige o PIN de admin.</p>
+          )}
+          {editable && (
+            <div className="mt-3">
+              <Sheet label="Ajustar diferença" title="Ajustar diferença" disabled={!online} size="sm">
+                <ReconcileForm
+                  sessionId={sessionId}
+                  isAdmin={isAdmin}
+                  rows={list.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    buyInTotal: p.buyIns.reduce((s, b) => s + b.amount, 0),
+                    cashOut: p.cashOut ?? 0,
+                  }))}
+                />
+              </Sheet>
+            </div>
+          )}
+        </section>
+      )}
+
+      {rec && (
+        <section aria-label="Ajuste de contagem" className="mt-4 rounded-[24px] bg-ink/40 p-4 text-sm">
+          <p className="font-semibold">
+            Ajuste de contagem: {rec.discrepancy > 0 ? "sobravam" : "faltavam"} <Money cents={Math.abs(rec.discrepancy)} />
+          </p>
+          <p className="mt-0.5 text-[13px] text-ivory/80">
+            {METHOD_LABELS[rec.method]}
+            {rec.playerName ? ` (${rec.playerName})` : ""}
+            {rec.byName ? ` · confirmado por ${rec.byName}` : ""}
+          </p>
+          {editable && (
+            <button
+              type="button"
+              disabled={!canEdit}
+              onClick={() => act({ t: "undo" }, () => undoReconcile(sessionId))}
+              className={buttonClass("secondary", "sm", "mt-3")}
+            >
+              Desfazer ajuste
+            </button>
+          )}
+        </section>
+      )}
 
       {error && (
         <div role="alert" className="mt-3 flex items-start gap-3 rounded-2xl bg-ink/60 px-4 py-3 text-sm">
@@ -150,7 +244,7 @@ function PlayerCard({
   const [custom, setCustom] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const total = p.buyIns.reduce((s, b) => s + b.amount, 0);
-  const net = p.cashOut === null ? null : p.cashOut - total;
+  const net = p.cashOut === null ? null : p.cashOut - total + p.adjustment;
 
   return (
     <li className="glass rounded-[24px] p-4">
@@ -236,6 +330,12 @@ function PlayerCard({
       ) : (
         <p className="mt-3 text-sm text-ivory/80">
           Cash-out: {p.cashOut === null ? "—" : <Money cents={p.cashOut} />}
+        </p>
+      )}
+      {p.adjustment !== 0 && (
+        <p className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-ink/30 px-3 py-1.5 text-sm">
+          <span>Ajuste de contagem</span>
+          <Money cents={p.adjustment} signed />
         </p>
       )}
       {localError && (

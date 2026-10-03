@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireViewerPage } from "@/lib/identity";
+import { isAdmin } from "@/lib/admin";
 import { getActivePlayers, getSessionDetail } from "@/lib/queries";
 import { formatDay, toDateInput } from "@/lib/format";
 import { Sheet } from "@/components/ui/Sheet";
@@ -14,7 +15,7 @@ export const metadata: Metadata = { title: "Sessão" };
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   await requireViewerPage();
   const { id } = await params;
-  const [s, active] = await Promise.all([getSessionDetail(id), getActivePlayers()]);
+  const [s, active, admin] = await Promise.all([getSessionDetail(id), getActivePlayers(), isAdmin()]);
   if (!s) notFound();
   const editable = !s.settlement;
   const inSession = new Set(s.players.map((p) => p.playerId));
@@ -52,6 +53,18 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
       )}
 
       <SessionLive
+        sessionId={s.id}
+        isAdmin={admin}
+        reconciliation={
+          s.reconciledAt && s.adjustmentMethod && s.discrepancy !== null
+            ? {
+                method: s.adjustmentMethod,
+                discrepancy: s.discrepancy,
+                byName: s.reconciledBy?.name ?? null,
+                playerName: s.adjustmentPlayer?.name ?? null,
+              }
+            : null
+        }
         editable={editable}
         defaultBuyIn={s.defaultBuyIn}
         players={s.players.map((p) => ({
@@ -60,6 +73,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
           name: p.player.name,
           avatarColor: p.player.avatarColor,
           cashOut: p.cashOut,
+          adjustment: p.adjustment,
           buyIns: p.buyIns,
         }))}
       />

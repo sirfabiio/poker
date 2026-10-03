@@ -24,7 +24,8 @@ export const getOpenState = cache(async (): Promise<OpenState> => {
         id: true,
         date: true,
         notes: true,
-        players: { select: { playerId: true, cashOut: true, buyIns: { select: { amount: true } } } },
+        reconciledAt: true,
+        players: { select: { playerId: true, cashOut: true, adjustment: true, buyIns: { select: { amount: true } } } },
       },
     }),
     db.player.findMany({
@@ -36,7 +37,13 @@ export const getOpenState = cache(async (): Promise<OpenState> => {
   const inputs = sessions.map((s) => ({
     id: s.id,
     date: s.date,
-    players: s.players.map((p) => ({ playerId: p.playerId, cashOut: p.cashOut, buyIns: p.buyIns.map((b) => b.amount) })),
+    reconciled: s.reconciledAt !== null,
+    players: s.players.map((p) => ({
+      playerId: p.playerId,
+      cashOut: p.cashOut,
+      adjustment: p.adjustment,
+      buyIns: p.buyIns.map((b) => b.amount),
+    })),
   }));
   const summary = summarizeOpen(inputs);
   const byId = new Map(players.map((p) => [p.id, p]));
@@ -61,7 +68,7 @@ export const getOpenState = cache(async (): Promise<OpenState> => {
       date: s.date,
       notes: sessions[i].notes,
       playerCount: s.players.length,
-      check: checkSession(s.players),
+      check: checkSession(s.players, s.reconciled),
     })),
     invalid: summary.invalid,
     preview,
@@ -91,12 +98,17 @@ export type SessionRow = {
   pot: number;
   out: number;
   missing: number;
+  /** soma dos ajustes de contagem */
+  adj: number;
+  reconciled: boolean;
 };
 
 /** Lista de sessões com totais numa única query. */
 export function getSessionRows() {
   return db.$queryRaw<SessionRow[]>`
     SELECT s."id", s."date", s."settlementId", st."label",
+      (s."reconciledAt" IS NOT NULL) AS "reconciled",
+      COALESCE(sp."adj", 0)::int AS "adj",
       COALESCE(sp."players", 0)::int AS "players",
       COALESCE(sp."out", 0)::int AS "out",
       COALESCE(sp."missing", 0)::int AS "missing",
@@ -104,7 +116,7 @@ export function getSessionRows() {
     FROM "Session" s
     LEFT JOIN "Settlement" st ON st."id" = s."settlementId"
     LEFT JOIN (
-      SELECT "sessionId", COUNT(*) AS "players", SUM("cashOut") AS "out",
+      SELECT "sessionId", COUNT(*) AS "players", SUM("cashOut") AS "out", SUM("adjustment") AS "adj",
              COUNT(*) FILTER (WHERE "cashOut" IS NULL) AS "missing"
       FROM "SessionPlayer" GROUP BY "sessionId"
     ) sp ON sp."sessionId" = s."id"
@@ -132,6 +144,11 @@ export function getSessionDetail(id: string) {
       date: true,
       notes: true,
       defaultBuyIn: true,
+      discrepancy: true,
+      adjustmentMethod: true,
+      reconciledAt: true,
+      reconciledBy: { select: { name: true } },
+      adjustmentPlayer: { select: { name: true } },
       settlement: { select: { id: true, label: true } },
       createdBy: { select: { name: true } },
       players: {
@@ -140,6 +157,7 @@ export function getSessionDetail(id: string) {
           id: true,
           playerId: true,
           cashOut: true,
+          adjustment: true,
           player: { select: { name: true, avatarColor: true } },
           buyIns: { orderBy: { createdAt: "asc" }, select: { id: true, amount: true } },
         },
@@ -181,6 +199,7 @@ export async function getMyHistory(playerId: string) {
       take: 60,
       select: {
         cashOut: true,
+        adjustment: true,
         buyIns: { select: { amount: true } },
         session: { select: { id: true, date: true, settlementId: true } },
       },
@@ -204,7 +223,8 @@ export async function getMyHistory(playerId: string) {
       date: r.session.date,
       open: r.session.settlementId === null,
       complete: r.cashOut !== null,
-      net: playerNet({ playerId, cashOut: r.cashOut, buyIns: r.buyIns.map((b) => b.amount) }),
+      adjustment: r.adjustment,
+      net: playerNet({ playerId, cashOut: r.cashOut, adjustment: r.adjustment, buyIns: r.buyIns.map((b) => b.amount) }),
     })),
     pending,
   };

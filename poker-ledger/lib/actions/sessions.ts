@@ -9,16 +9,56 @@ import { requirePlayer } from "../identity";
 import { logActivity } from "../activity";
 import { isValidAmount, formatCents } from "../money";
 import { formatDay, parseDateInput } from "../format";
+import { checkAdminPin, isAdmin } from "../admin";
+import { exceedsSoftLimit, isReconcileMethod, METHOD_LABELS, reconcile, ReconcileError, type ReconcileMethod } from "../reconcile";
 
 const CLOSED = "Esta sessão já foi fechada nas contas e não pode ser editada.";
 
+type LockedSession = {
+  settlementId: string | null;
+  date: Date;
+  reconciledAt: Date | null;
+  discrepancy: number | null;
+  adjustmentMethod: ReconcileMethod | null;
+};
+
 /** Bloqueia a linha da sessão (FOR UPDATE) e garante que ainda está em aberto. */
 async function lockOpenSession(tx: Prisma.TransactionClient, sessionId: string) {
-  const rows = await tx.$queryRaw<{ settlementId: string | null; date: Date }[]>`
-    SELECT "settlementId", "date" FROM "Session" WHERE "id" = ${sessionId} FOR UPDATE`;
+  const rows = await tx.$queryRaw<LockedSession[]>`
+    SELECT "settlementId", "date", "reconciledAt", "discrepancy", "adjustmentMethod"::text AS "adjustmentMethod"
+    FROM "Session" WHERE "id" = ${sessionId} FOR UPDATE`;
   if (rows.length === 0) throw new UserError("Sessão não encontrada.");
   if (rows[0].settlementId) throw new UserError(CLOSED, "closed");
   return rows[0];
+}
+
+/** Repõe a sessão sem ajuste de contagem (adjustment = 0, campos de reconciliação a null). */
+async function clearAdjustment(tx: Prisma.TransactionClient, sessionId: string) {
+  await tx.sessionPlayer.updateMany({ where: { sessionId }, data: { adjustment: 0 } });
+  await tx.session.update({
+    where: { id: sessionId },
+    data: { discrepancy: null, adjustmentMethod: null, adjustmentPlayerId: null, reconciledAt: null, reconciledByPlayerId: null },
+  });
+}
+
+/** Qualquer alteração a entradas ou cash-outs de uma sessão ajustada anula o ajuste. */
+async function annulAdjustmentIfAny(
+  tx: Prisma.TransactionClient,
+  sessionId: string,
+  s: LockedSession,
+  viewer: { id: string; name: string },
+) {
+  if (!s.reconciledAt) return;
+  await clearAdjustment(tx, sessionId);
+  await logActivity(tx, {
+    actorPlayerId: viewer.id,
+    action: "adjustment.annul",
+    entityType: "session",
+    entityId: sessionId,
+    summary: `Ajuste de contagem anulado automaticamente (${s.adjustmentMethod ? METHOD_LABELS[s.adjustmentMethod] : "?"}, D = ${
+      s.discrepancy ?? 0
+    } cêntimos) porque ${viewer.name} alterou entradas ou cash-outs (${formatDay(s.date)})`,
+  });
 }
 
 async function lockBySessionPlayer(tx: Prisma.TransactionClient, sessionPlayerId: string) {
@@ -28,7 +68,7 @@ async function lockBySessionPlayer(tx: Prisma.TransactionClient, sessionPlayerId
   });
   if (!sp) throw new UserError("Jogador não encontrado nesta sessão.");
   const s = await lockOpenSession(tx, sp.sessionId);
-  return { sessionId: sp.sessionId, playerName: sp.player.name, day: formatDay(s.date) };
+  return { sessionId: sp.sessionId, playerName: sp.player.name, day: formatDay(s.date), locked: s };
 }
 
 function uniqueIds(ids: unknown): string[] {
@@ -135,6 +175,7 @@ export async function addSessionPlayers(sessionId: string, playerIds: string[]):
         });
       }
       if (toAdd.length) {
+        await annulAdjustmentIfAny(tx, sessionId, s, viewer);
         const names = await tx.player.findMany({ where: { id: { in: toAdd } }, select: { name: true } });
         await logActivity(tx, {
           actorPlayerId: viewer.id,
@@ -157,6 +198,7 @@ export async function removeSessionPlayer(sessionPlayerId: string): Promise<Acti
     await db.$transaction(async (tx) => {
       const ctx = await lockBySessionPlayer(tx, sessionPlayerId);
       await tx.sessionPlayer.delete({ where: { id: sessionPlayerId } });
+      await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "session.removePlayer",
@@ -179,6 +221,7 @@ export async function addBuyIn(sessionPlayerId: string, amount: number): Promise
     await db.$transaction(async (tx) => {
       const ctx = await lockBySessionPlayer(tx, sessionPlayerId);
       const b = await tx.buyIn.create({ data: { sessionPlayerId, amount }, select: { id: true } });
+      await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "buyin.add",
@@ -202,6 +245,7 @@ export async function removeBuyIn(buyInId: string): Promise<ActionResult> {
       if (!b) throw new UserError("Esta entrada já não existe.");
       const ctx = await lockBySessionPlayer(tx, b.sessionPlayerId);
       await tx.buyIn.delete({ where: { id: buyInId } });
+      await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "buyin.remove",
@@ -224,6 +268,7 @@ export async function setCashOut(sessionPlayerId: string, amount: number | null)
     await db.$transaction(async (tx) => {
       const ctx = await lockBySessionPlayer(tx, sessionPlayerId);
       await tx.sessionPlayer.update({ where: { id: sessionPlayerId }, data: { cashOut: amount } });
+      await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "cashout.set",
@@ -238,5 +283,98 @@ export async function setCashOut(sessionPlayerId: string, amount: number | null)
     return {};
   });
   if (r.ok) done();
+  return r;
+}
+
+export type ReconcileRequest = {
+  method: ReconcileMethod;
+  singlePlayerId?: string | null;
+  /** D que o utilizador viu ao confirmar: se mudou entretanto, recusa */
+  expectedDiscrepancy: number;
+  /** PIN de admin, exigido quando |D| passa os limites suaves */
+  pin?: string;
+};
+
+/** Confirmar o ajuste de uma diferença de contagem. Permissões validadas aqui, no servidor. */
+export async function reconcileSession(sessionId: string, req: ReconcileRequest): Promise<ActionResult> {
+  const r = await run(async () => {
+    const viewer = await requirePlayer();
+    if (!isReconcileMethod(req?.method)) throw new UserError("Escolhe um método de ajuste válido.");
+    await db.$transaction(async (tx) => {
+      const s = await lockOpenSession(tx, sessionId);
+      if (s.reconciledAt) throw new UserError("Esta sessão já tem um ajuste. Desfaz o ajuste atual primeiro.");
+      const players = await tx.sessionPlayer.findMany({
+        where: { sessionId },
+        select: { id: true, cashOut: true, player: { select: { name: true } }, buyIns: { select: { amount: true } } },
+      });
+      const inputs = players.map((p) => ({ id: p.id, buyInTotal: p.buyIns.reduce((a, b) => a + b.amount, 0), cashOut: p.cashOut }));
+      const singleSp = req.method === "SINGLE_PLAYER" ? players.find((p) => p.id === req.singlePlayerId) : undefined;
+      let result;
+      try {
+        result = reconcile({ players: inputs, method: req.method, singlePlayerId: req.singlePlayerId });
+      } catch (e) {
+        if (e instanceof ReconcileError) throw new UserError(e.message);
+        throw e;
+      }
+      const D = result.discrepancy;
+      if (D === 0) throw new UserError("A contagem bate certo: não há diferença para ajustar.");
+      if (D !== req.expectedDiscrepancy) {
+        throw new UserError("Os valores da sessão mudaram entretanto. Revê a diferença e confirma de novo.", "stale");
+      }
+      const totalIn = inputs.reduce((a, p) => a + p.buyInTotal, 0);
+      if (exceedsSoftLimit(D, totalIn) && !(await isAdmin()) && !checkAdminPin(String(req.pin ?? ""))) {
+        throw new UserError("A diferença passa o limite: só o admin pode confirmar este ajuste (PIN inválido ou em falta).", "needs_admin");
+      }
+      for (const a of result.adjustments) {
+        await tx.sessionPlayer.update({ where: { id: a.id }, data: { adjustment: a.adjustment } });
+      }
+      const singlePlayer = singleSp ? await tx.sessionPlayer.findUnique({ where: { id: singleSp.id }, select: { playerId: true } }) : null;
+      await tx.session.update({
+        where: { id: sessionId },
+        data: {
+          discrepancy: D,
+          adjustmentMethod: req.method,
+          adjustmentPlayerId: singlePlayer?.playerId ?? null,
+          reconciledAt: new Date(),
+          reconciledByPlayerId: viewer.id,
+        },
+      });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        action: "adjustment.apply",
+        entityType: "session",
+        entityId: sessionId,
+        summary: `${viewer.name} ajustou a diferença de contagem (${D > 0 ? "sobravam" : "faltavam"} ${formatCents(D)}, D = ${D} cêntimos) com o método ${
+          METHOD_LABELS[req.method]
+        }${singleSp ? ` (${singleSp.player.name})` : ""} — ${formatDay(s.date)}`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) done(sessionId);
+  return r;
+}
+
+/** Desfazer o ajuste (só com a sessão em aberto). */
+export async function undoReconcile(sessionId: string): Promise<ActionResult> {
+  const r = await run(async () => {
+    const viewer = await requirePlayer();
+    await db.$transaction(async (tx) => {
+      const s = await lockOpenSession(tx, sessionId);
+      if (!s.reconciledAt) throw new UserError("Esta sessão não tem nenhum ajuste para desfazer.");
+      await clearAdjustment(tx, sessionId);
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        action: "adjustment.undo",
+        entityType: "session",
+        entityId: sessionId,
+        summary: `${viewer.name} desfez o ajuste de contagem (${s.adjustmentMethod ? METHOD_LABELS[s.adjustmentMethod] : "?"}, D = ${
+          s.discrepancy ?? 0
+        } cêntimos) — ${formatDay(s.date)}`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) done(sessionId);
   return r;
 }

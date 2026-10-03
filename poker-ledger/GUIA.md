@@ -120,11 +120,11 @@ npm test
 **Como sei que correu bem:** no fim aparece algo como:
 
 ```
- Test Files  5 passed (5)
-      Tests  23 passed (23)
+ Test Files  7 passed (7)
+      Tests  37 passed (37)
 ```
 
-Os testes não precisam da base de dados. Cobrem o cálculo do fecho (`lib/settle.ts`), os nomes duplicados ("rui" vs "Rui"), a validação de sessões, os valores em cêntimos e o PIN de admin.
+Os testes não precisam da base de dados. Cobrem o cálculo do fecho (`lib/settle.ts`), os ajustes de diferenças de contagem (`lib/reconcile.ts`), os nomes duplicados ("rui" vs "Rui"), a validação de sessões, os valores em cêntimos e o PIN de admin.
 
 ---
 
@@ -187,7 +187,7 @@ Guarda as duas num sítio seguro (por exemplo, um gestor de palavras-passe). **N
 1. No projeto da Vercel clica em **Visit** (ou abre o endereço `https://<NOME_DO_PROJETO>.vercel.app`).
 2. **Confirma que a base de dados está vazia:** deve aparecer "Quem és tu?" com a frase "Ainda não há ninguém à mesa. Sê o primeiro!" (sem a Ana, o Rui, etc. do seed).
 3. Clica **Sou novo aqui**, escreve o teu nome e **Criar perfil e entrar**.
-4. Faz uma sessão de teste: **Sessões → + Nova sessão** → em "+ Adicionar pessoa nova" cria uma pessoa "Teste", seleciona-te também → **Começar sessão**. Faz um **Rebuy** e preenche os **cash-outs** (a soma tem de dar o total das entradas; a app avisa a diferença).
+4. Faz uma sessão de teste: **Sessões → + Nova sessão** → em "+ Adicionar pessoa nova" cria uma pessoa "Teste", seleciona-te também → **Começar sessão**. Faz um **Rebuy** e preenche os **cash-outs**. Se a soma não der o total das entradas, a app mostra "Sobram/Faltam X €": recontem e, se for mesmo assim, usa **Ajustar diferença** (explicado no README, secção "Diferenças de contagem").
 5. Testa o fecho: **Contas → Fechar contas (precisa do PIN de admin)** → escreve o `ADMIN_PIN` de produção → **Ir para Contas e fechar o ciclo** → **Fechar contas** → **Confirmar e fechar contas**. Na página do fecho, carrega em **Marcar como paga**.
 
 **Como sei que correu bem:** depois do fecho vês os talões, o progresso (ex.: "1/1 pagas") e o carimbo **PAGO**.

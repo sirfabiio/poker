@@ -36,7 +36,7 @@ export default async function Sessions() {
           {open.map((r) => (
             <SessionItem
               key={r.id}
-              s={{ id: r.id, date: r.date, players: r.players, pot: r.pot, status: r.missing === 0 && r.out === r.pot ? "ready" : "pending" }}
+              s={{ id: r.id, date: r.date, players: r.players, pot: r.pot, status: r.missing === 0 && r.out + r.adj === r.pot && (r.out === r.pot || r.reconciled) ? "ready" : "pending" }}
             />
           ))}
         </ul>
