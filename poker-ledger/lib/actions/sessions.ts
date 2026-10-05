@@ -11,6 +11,7 @@ import { logActivity } from "../activity";
 import { isValidAmount, formatCents } from "../money";
 import { formatDay, parseDateInput } from "../format";
 import { checkAdminPin, isAdmin, requireAdmin } from "../admin";
+import { bumpSessionVersion } from "../live/bump";
 import { exceedsSoftLimit, isReconcileMethod, METHOD_LABELS, reconcile, ReconcileError, type ReconcileMethod } from "../reconcile";
 
 const CLOSED = "Esta sessão já foi fechada nas contas e não pode ser editada.";
@@ -143,6 +144,7 @@ export async function updateSession(
     await db.$transaction(async (tx) => {
       await lockOpenSession(tx, sessionId);
       await tx.session.update({ where: { id: sessionId }, data: { date, notes, defaultBuyIn: input.defaultBuyIn } });
+      await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "session_edited" });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "session.update",
@@ -178,6 +180,7 @@ export async function addSessionPlayers(sessionId: string, playerIds: string[]):
       }
       if (toAdd.length) {
         await annulAdjustmentIfAny(tx, sessionId, s, viewer);
+        await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "player_added" });
         const names = await tx.player.findMany({ where: { id: { in: toAdd } }, select: { name: true } });
         await logActivity(tx, {
           actorPlayerId: viewer.id,
@@ -201,6 +204,7 @@ export async function removeSessionPlayer(sessionPlayerId: string): Promise<Acti
       const ctx = await lockBySessionPlayer(tx, sessionPlayerId);
       await tx.sessionPlayer.delete({ where: { id: sessionPlayerId } });
       await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
+      await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "player_removed" });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "session.removePlayer",
@@ -224,6 +228,7 @@ export async function addBuyIn(sessionPlayerId: string, amount: number): Promise
       const ctx = await lockBySessionPlayer(tx, sessionPlayerId);
       const b = await tx.buyIn.create({ data: { sessionPlayerId, amount }, select: { id: true } });
       await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
+      await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "rebuy_added" });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "buyin.add",
@@ -248,6 +253,7 @@ export async function removeBuyIn(buyInId: string): Promise<ActionResult> {
       const ctx = await lockBySessionPlayer(tx, b.sessionPlayerId);
       await tx.buyIn.delete({ where: { id: buyInId } });
       await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
+      await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "rebuy_removed" });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "buyin.remove",
@@ -271,6 +277,7 @@ export async function setCashOut(sessionPlayerId: string, amount: number | null)
       const ctx = await lockBySessionPlayer(tx, sessionPlayerId);
       await tx.sessionPlayer.update({ where: { id: sessionPlayerId }, data: { cashOut: amount } });
       await annulAdjustmentIfAny(tx, ctx.sessionId, ctx.locked, viewer);
+      await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "cashout_set" });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "cashout.set",
@@ -341,6 +348,7 @@ export async function reconcileSession(sessionId: string, req: ReconcileRequest)
           reconciledByPlayerId: viewer.id,
         },
       });
+      await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "adjustment_confirmed" });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "adjustment.apply",
@@ -365,6 +373,7 @@ export async function undoReconcile(sessionId: string): Promise<ActionResult> {
       const s = await lockOpenSession(tx, sessionId);
       if (!s.reconciledAt) throw new UserError("Esta sessão não tem nenhum ajuste para desfazer.");
       await clearAdjustment(tx, sessionId);
+      await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "adjustment_undone" });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         action: "adjustment.undo",

@@ -124,7 +124,23 @@ npm test
       Tests  37 passed (37)
 ```
 
-Os testes não precisam da base de dados. Cobrem o cálculo do fecho (`lib/settle.ts`), os ajustes de diferenças de contagem (`lib/reconcile.ts`), os nomes duplicados ("rui" vs "Rui"), a validação de sessões, os valores em cêntimos e o PIN de admin.
+Os testes não precisam da base de dados. Cobrem o cálculo do fecho (`lib/settle.ts`), os ajustes de diferenças de contagem (`lib/reconcile.ts`), os nomes duplicados ("rui" vs "Rui"), a validação de sessões, os valores em cêntimos, o PIN de admin e a atualização automática da página da sessão.
+
+Há um teste extra que precisa de uma base de dados **só para testes** (é apagada por completo). Prova que cada escrita sobe a versão da sessão. Só corre se a variável `TEST_DATABASE_URL` apontar para uma base de dados cujo nome termina em `_test`. Nunca uses a de produção nem a `dev`. Sem a variável, esse teste aparece como "skipped".
+
+```bash
+TEST_DATABASE_URL="postgresql://…/poker_test" npm test
+```
+
+### 3.1 Teste manual: a página da sessão atualiza-se sozinha
+
+Usa dois dispositivos, ou dois navegadores diferentes (ex.: Chrome e Firefox, ou uma janela normal e uma privada), cada um com um perfil diferente.
+
+1. Abre a **mesma sessão** nos dois. Num deles, carrega em **Rebuy** num jogador. **Como sei que correu bem:** no outro, em 4 segundos ou menos, sem recarregar, o número de entradas desse jogador sobe e aparece o aviso "<nome> adicionou um rebuy".
+2. No dispositivo B, toca no campo de cash-out de um jogador e escreve um valor **sem guardar**. No dispositivo A, escreve outro valor no cash-out do mesmo jogador e carrega em **Guardar**. **Como sei que correu bem:** em B, o que escreveste continua lá, o cursor não saiu do campo, e aparece por baixo "Valor alterado por <nome>: X €" com o botão **Usar esse valor**.
+3. Com as contas da sessão certas, entra como admin num dos dispositivos e fecha as contas. **Como sei que correu bem:** no outro, em 4 segundos ou menos, aparece "Sessão fechada nas contas" e a sessão fica bloqueada ("Já não pode ser editada"), sem botões de edição.
+
+Nota: enquanto houver uma página de sessão aberta e visível, a app faz um pedido pequeno à base de dados a cada 3 s (10 s se ninguém mexer durante 5 minutos). Isso mantém a base de dados Neon "acordada" e conta para as horas de computação. Fechar o separador, bloquear o ecrã ou mudar de app pára os pedidos. Confirma os limites atuais do plano grátis em https://neon.tech/pricing.
 
 ---
 

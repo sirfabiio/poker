@@ -21,6 +21,11 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
   return { id: p.id, name: p.name, avatarColor: p.avatarColor, ibanOrMbway: p.ibanOrMbway };
 });
 
+/** Só o id do cookie, sem ir à BD (para a verificação de versão, que corre a cada 3 s). */
+export async function getViewerIdCookie(): Promise<string | null> {
+  return (await cookies()).get(COOKIE)?.value || null;
+}
+
 /** Para páginas: sem perfil escolhido vai para "Quem és tu?". */
 export async function requireViewerPage(): Promise<Viewer> {
   const v = await getViewer();
