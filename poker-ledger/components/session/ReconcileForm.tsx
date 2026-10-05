@@ -19,7 +19,18 @@ const HINTS: Record<ReconcileMethod, string> = {
 };
 
 /** Escolha do método de ajuste com pré-visualização em tempo real: cash-out, ajuste e líquido por jogador. */
-export function ReconcileForm({ sessionId, rows, isAdmin }: { sessionId: string; rows: Row[]; isAdmin: boolean }) {
+export function ReconcileForm({
+  sessionId,
+  rows,
+  isAdmin,
+  stale = false,
+}: {
+  sessionId: string;
+  rows: Row[];
+  isAdmin: boolean;
+  /** a diferença já não está por ajustar (outra pessoa ajustou ou mudou os valores com a folha aberta) */
+  stale?: boolean;
+}) {
   const [method, setMethod] = useState<ReconcileMethod>("EQUAL");
   const [single, setSingle] = useState(rows[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +49,7 @@ export function ReconcileForm({ sessionId, rows, isAdmin }: { sessionId: string;
   const D = preview?.discrepancy ?? rows.reduce((s, r) => s + r.cashOut, 0) - totalIn;
   const over = exceedsSoftLimit(D, totalIn);
   const needsPin = over && !isAdmin;
+  const singleGone = method === "SINGLE_PLAYER" && !rows.some((r) => r.id === single);
 
   return (
     <form
@@ -148,12 +160,22 @@ export function ReconcileForm({ sessionId, rows, isAdmin }: { sessionId: string;
         </div>
       )}
 
+      {stale && (
+        <p role="status" className="rounded-2xl bg-ink/40 p-3 text-sm">
+          Já não há diferença por ajustar: outra pessoa ajustou-a ou alterou os valores. Fecha esta folha para ver a sessão atual.
+        </p>
+      )}
+      {!stale && singleGone && (
+        <p role="status" className="text-sm text-loss-soft">
+          O jogador escolhido saiu da sessão. Escolhe outro.
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-sm text-loss-soft">
           {error}
         </p>
       )}
-      <button type="submit" disabled={pending || !online || !preview} className={buttonClass("primary", "lg", "w-full")}>
+      <button type="submit" disabled={pending || !online || !preview || stale} className={buttonClass("primary", "lg", "w-full")}>
         {pending ? "A confirmar…" : "Confirmar ajuste"}
       </button>
       {!online && <p className="text-sm text-ivory/75">{OFFLINE_HINT}</p>}

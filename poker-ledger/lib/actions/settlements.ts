@@ -11,6 +11,7 @@ import { summarizeOpen } from "../ledger";
 import { computeTransfers, SettlementError } from "../settle";
 import { formatCents } from "../money";
 import { formatDay, monthLabel } from "../format";
+import { bumpSessionVersion } from "../live/bump";
 
 /** Fechar contas: junta TODAS as sessões em aberto, calcula saldos e gera transferências. Só admin. */
 export async function closeAccounts(_: unknown, form: FormData): Promise<ActionResult> {
@@ -69,6 +70,7 @@ export async function closeAccounts(_: unknown, form: FormData): Promise<ActionR
           select: { id: true },
         });
         await tx.session.updateMany({ where: { id: { in: summary.validIds } }, data: { settlementId: st.id } });
+        await bumpSessionVersion(tx, { sessionId: summary.validIds, actorPlayerId: viewer.id, type: "session_settled" });
         await logActivity(tx, {
           actorPlayerId: viewer.id,
           action: "settlement.close",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
+import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { Chip } from "@/components/ui/Chip";
 import { ChipStack } from "@/components/ui/ChipStack";
 import { Money } from "@/components/ui/Money";
@@ -15,6 +15,8 @@ import { Sheet } from "@/components/ui/Sheet";
 import { PotTable } from "./PotTable";
 import { MoneyInput } from "./MoneyInput";
 import { ReconcileForm } from "./ReconcileForm";
+import { useLiveField } from "./live-field";
+import type { FieldWarning } from "@/lib/live/field";
 
 export type LivePlayer = {
   id: string; // SessionPlayer.id
@@ -87,8 +89,21 @@ export function SessionLive({
   const [, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dropFor, setDropFor] = useState<string | null>(null);
+  const [adjustOpen, setAdjustOpen] = useState(false);
   const online = useOnline();
   const canEdit = editable && online;
+
+  // Linha a ser editada: se outra pessoa tirar esse jogador, avisa em vez de a linha desaparecer em silêncio.
+  const editing = useRef<{ id: string; name: string } | null>(null);
+  const myRemovals = useRef(new Set<string>());
+  const [gone, setGone] = useState<string | null>(null);
+  useEffect(() => {
+    const e = editing.current;
+    if (e && !players.some((p) => p.id === e.id) && !myRemovals.current.has(e.id)) {
+      editing.current = null;
+      setGone(e.name);
+    }
+  }, [players]);
 
   const act = (op: Op, call: () => Promise<ActionResult>) => {
     setError(null);
@@ -135,25 +150,41 @@ export function SessionLive({
         </p>
       </div>
 
-      {needsAdjust && (
-        <section aria-label="Diferença de contagem" className="mt-4 rounded-[24px] border border-gold-soft/40 bg-ink/50 p-4">
-          <p className="text-[17px] font-semibold text-gold-soft">Recontem as fichas antes de ajustar.</p>
-          <p className="mt-1 font-display text-[22px] font-semibold">
-            {totals.diff > 0 ? "Sobram" : "Faltam"} <Money cents={Math.abs(totals.diff)} />
-          </p>
-          <p className="mt-1 text-[13px] text-ivory/80">
-            Os cash-outs {totals.diff > 0 ? "somam mais" : "somam menos"} do que as entradas. Se a recontagem confirmar, ajusta: os cash-outs
-            ficam como estão e cada jogador recebe uma linha de ajuste.
-          </p>
-          {exceedsSoftLimit(totals.diff, totals.totalIn) && (
-            <p className="mt-2 text-sm font-semibold text-loss-soft">⚠ Diferença grande: confirmar o ajuste exige o PIN de admin.</p>
+      {/* A sheet fica montada enquanto estiver aberta, mesmo que outra pessoa ajuste a diferença entretanto. */}
+      {(needsAdjust || adjustOpen) && (
+        <section
+          aria-label={needsAdjust ? "Diferença de contagem" : undefined}
+          className={needsAdjust ? "mt-4 rounded-[24px] border border-gold-soft/40 bg-ink/50 p-4" : ""}
+        >
+          {needsAdjust && (
+            <>
+              <p className="text-[17px] font-semibold text-gold-soft">Recontem as fichas antes de ajustar.</p>
+              <p className="mt-1 font-display text-[22px] font-semibold">
+                {totals.diff > 0 ? "Sobram" : "Faltam"} <Money cents={Math.abs(totals.diff)} />
+              </p>
+              <p className="mt-1 text-[13px] text-ivory/80">
+                Os cash-outs {totals.diff > 0 ? "somam mais" : "somam menos"} do que as entradas. Se a recontagem confirmar, ajusta: os
+                cash-outs ficam como estão e cada jogador recebe uma linha de ajuste.
+              </p>
+              {exceedsSoftLimit(totals.diff, totals.totalIn) && (
+                <p className="mt-2 text-sm font-semibold text-loss-soft">⚠ Diferença grande: confirmar o ajuste exige o PIN de admin.</p>
+              )}
+            </>
           )}
           {editable && (
-            <div className="mt-3">
-              <Sheet label="Ajustar diferença" title="Ajustar diferença" disabled={!online} size="sm">
+            <div className={needsAdjust ? "mt-3" : ""}>
+              <Sheet
+                label="Ajustar diferença"
+                title="Ajustar diferença"
+                disabled={!online}
+                size="sm"
+                triggerClassName={needsAdjust ? "" : "hidden"}
+                onOpenChange={setAdjustOpen}
+              >
                 <ReconcileForm
                   sessionId={sessionId}
                   isAdmin={isAdmin}
+                  stale={!needsAdjust}
                   rows={list.map((p) => ({
                     id: p.id,
                     name: p.name,
@@ -198,6 +229,14 @@ export function SessionLive({
           </button>
         </div>
       )}
+      {gone && (
+        <div role="status" className="mt-3 flex items-start gap-3 rounded-2xl bg-ink/60 px-4 py-3 text-sm">
+          <p className="flex-1">Outra pessoa tirou {gone} da sessão; o que estavas a escrever nessa linha não foi guardado.</p>
+          <button type="button" onClick={() => setGone(null)} aria-label="Fechar aviso" className="text-lg text-ivory/80">
+            ×
+          </button>
+        </div>
+      )}
       {editable && !online && <p className="mt-3 text-sm text-ivory/75">{OFFLINE_HINT}</p>}
 
       <ul className="mt-4 space-y-3">
@@ -212,7 +251,14 @@ export function SessionLive({
             onRebuy={(amount) => act({ t: "add", sp: p.id, id: `tmp-${++tmp}`, amount }, () => addBuyIn(p.id, amount))}
             onRemoveBuy={(id) => act({ t: "rmBuy", sp: p.id, id }, () => removeBuyIn(id))}
             onCash={(amount) => act({ t: "cash", sp: p.id, amount }, () => setCashOut(p.id, amount))}
-            onRemove={() => act({ t: "rmPlayer", sp: p.id }, () => removeSessionPlayer(p.id))}
+            onRemove={() => {
+              myRemovals.current.add(p.id);
+              act({ t: "rmPlayer", sp: p.id }, () => removeSessionPlayer(p.id));
+            }}
+            onEditing={(on) => {
+              if (on) editing.current = { id: p.id, name: p.name };
+              else if (editing.current?.id === p.id) editing.current = null;
+            }}
           />
         ))}
       </ul>
@@ -230,6 +276,7 @@ function PlayerCard({
   onRemoveBuy,
   onCash,
   onRemove,
+  onEditing,
 }: {
   p: LivePlayer;
   defaultBuyIn: number;
@@ -240,14 +287,24 @@ function PlayerCard({
   onRemoveBuy: (id: string) => void;
   onCash: (amount: number | null) => void;
   onRemove: () => void;
+  onEditing: (on: boolean) => void;
 }) {
   const [custom, setCustom] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  // Campos que podem mudar no servidor enquanto se escreve: nunca sobrescrever o rascunho (lib/live/field.ts).
+  const cash = useLiveField(p.cashOut === null ? "" : centsToInput(p.cashOut));
+  const rebuy = useLiveField(centsToInput(defaultBuyIn));
   const total = p.buyIns.reduce((s, b) => s + b.amount, 0);
   const net = p.cashOut === null ? null : p.cashOut - total + p.adjustment;
 
   return (
-    <li className="glass rounded-[24px] p-4">
+    <li
+      className="glass rounded-[24px] p-4"
+      onFocus={() => onEditing(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onEditing(false);
+      }}
+    >
       <div className="flex items-center gap-3">
         <Chip name={p.name} color={p.avatarColor} />
         <div className="min-w-0 flex-1">
@@ -288,41 +345,41 @@ function PlayerCard({
           className="mt-3 flex items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            const v = parseEuros(String(new FormData(e.currentTarget).get("amount") ?? ""));
+            const v = parseEuros(rebuy.value);
             if (!v) return setLocalError("Valor inválido (ex.: 15 ou 12,50).");
             setLocalError(null);
             setCustom(false);
+            rebuy.saved(centsToInput(defaultBuyIn));
             onRebuy(v);
           }}
         >
-          <MoneyInput label={`Valor da entrada de ${p.name}`} name="amount" className="flex-1" autoFocus required />
+          <MoneyInput label={`Valor da entrada de ${p.name}`} name="amount" className="flex-1" autoFocus required {...rebuy.inputProps} />
           <button type="submit" disabled={!canEdit} className={buttonClass("secondary", "md")}>
             Adicionar
           </button>
         </form>
       )}
 
+      {editable && custom && rebuy.warning && <FieldWarningNote warning={rebuy.warning} onUse={rebuy.useServerValue} />}
+
       {editable ? (
         <form
           className="mt-3 flex items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            const raw = String(new FormData(e.currentTarget).get("cashOut") ?? "").trim();
-            if (raw === "") return onCash(null);
+            const raw = cash.value.trim();
+            if (raw === "") {
+              cash.saved("");
+              return onCash(null);
+            }
             const v = parseEuros(raw);
             if (v === null) return setLocalError("Cash-out inválido (ex.: 35 ou 12,50).");
             setLocalError(null);
+            cash.saved(centsToInput(v));
             onCash(v);
           }}
         >
-          <MoneyInput
-            key={p.cashOut ?? "vazio"}
-            label={`Cash-out de ${p.name}`}
-            name="cashOut"
-            className="flex-1"
-            placeholder="Com quanto sai?"
-            defaultValue={p.cashOut === null ? "" : centsToInput(p.cashOut)}
-          />
+          <MoneyInput label={`Cash-out de ${p.name}`} name="cashOut" className="flex-1" placeholder="Com quanto sai?" {...cash.inputProps} />
           <button type="submit" disabled={!canEdit} className={buttonClass("secondary", "md")}>
             Guardar
           </button>
@@ -332,6 +389,7 @@ function PlayerCard({
           Cash-out: {p.cashOut === null ? "—" : <Money cents={p.cashOut} />}
         </p>
       )}
+      {editable && cash.warning && <FieldWarningNote warning={cash.warning} onUse={cash.useServerValue} />}
       {p.adjustment !== 0 && (
         <p className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-ink/30 px-3 py-1.5 text-sm">
           <span>Ajuste de contagem</span>
@@ -382,5 +440,19 @@ function PlayerCard({
         )}
       </details>
     </li>
+  );
+}
+
+/** "Valor alterado por Rui: 35,00 €" + "Usar esse valor" (descarta o rascunho). */
+function FieldWarningNote({ warning, onUse }: { warning: FieldWarning; onUse: () => void }) {
+  return (
+    <p role="status" className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-ink/40 px-3 py-1.5 text-sm">
+      <span>
+        Valor alterado por {warning.changedBy ?? "outra pessoa"}: {warning.serverValue === "" ? "vazio" : `${warning.serverValue} €`}
+      </span>
+      <button type="button" onClick={onUse} className="min-h-9 rounded-full px-2 font-semibold text-gold-soft">
+        Usar esse valor
+      </button>
+    </p>
   );
 }

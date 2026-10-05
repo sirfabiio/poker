@@ -53,7 +53,14 @@ model Session {
   reconciledAt         DateTime?
   reconciledByPlayerId String?
 
-  createdBy        Player          @relation("SessionCreatedBy", fields: [createdByPlayerId], references: [id])
+  /// Sobe 1 em cada escrita na sessão (mesma transação): as páginas abertas comparam-na para se atualizarem.
+  version           Int     @default(0)
+  lastActorPlayerId String?
+  /// rebuy_added, rebuy_removed, cashout_set, player_added, player_removed, session_edited,
+  /// adjustment_confirmed, adjustment_undone, session_settled (lib/live/bump.ts)
+  lastChangeType    String?
+
+  createdBy       Player          @relation("SessionCreatedBy", fields: [createdByPlayerId], references: [id])
   adjustmentPlayer Player?         @relation("SessionAdjustmentPlayer", fields: [adjustmentPlayerId], references: [id])
   reconciledBy     Player?         @relation("SessionReconciledBy", fields: [reconciledByPlayerId], references: [id])
   settlement       Settlement?     @relation(fields: [settlementId], references: [id])

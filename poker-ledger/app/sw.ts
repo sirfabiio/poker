@@ -30,6 +30,11 @@ const notifyOnChange: SerwistPlugin = {
 };
 
 const isNever = (url: URL) => NEVER_CACHE.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`));
+/** Pedidos de dados (RSC das navegações e router.refresh, e /api/*): sempre à rede, para nunca esconderem dados novos. */
+const isData = (url: URL, request: Request) =>
+  request.headers.get("RSC") === "1" || url.searchParams.has("_rsc") || url.pathname.startsWith("/api/");
+/** Página de uma sessão (/sessoes/<id>): muda enquanto se joga. */
+const isSessionPage = (url: URL) => /^\/sessoes\/[^/]+\/?$/.test(url.pathname);
 
 const serwist = new Serwist({
   // Pré-cache do app shell: JS/CSS do build, fonte (self-hosted pelo next/font), ícones e página offline.
@@ -50,13 +55,16 @@ const serwist = new Serwist({
       }),
     },
     {
-      // Dados RSC das navegações dentro da app (não guardamos prefetches). Network-first: o router.refresh()
-      // e as navegações têm de ver saldos atuais; a cópia em cache só serve para ler offline.
-      matcher: ({ request }) => request.headers.get("RSC") === "1" && !request.headers.has("Next-Router-Prefetch"),
+      // RSC e /api/* (inclui a verificação de versão da sessão): nunca em cache.
+      matcher: ({ url, request }) => isData(url, request),
+      handler: new NetworkOnly(),
+    },
+    {
+      // Páginas de sessão: network-first; a cópia em cache só serve quando a rede falha (leitura offline).
+      matcher: ({ url, request }) => request.mode === "navigate" && isSessionPage(url),
       handler: new NetworkFirst({
-        cacheName: "rsc",
-        networkTimeoutSeconds: 4,
-        plugins: [okOnly, new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 14 })],
+        cacheName: "session-pages",
+        plugins: [okOnly, new ExpirationPlugin({ maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14 })],
       }),
     },
     {
@@ -75,3 +83,6 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+// A cache "rsc" de versões anteriores deixou de ser usada (os dados RSC já não vão para a cache).
+self.addEventListener("activate", (e) => e.waitUntil(caches.delete("rsc")));
