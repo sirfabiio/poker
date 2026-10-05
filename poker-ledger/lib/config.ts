@@ -9,3 +9,6 @@ export const MIN_SESSIONS_FOR_RATES = 3;
 export const STATS_TAG = "stats";
 /** Rede de segurança da cache das estatísticas para alterações feitas fora da app (segundos). */
 export const STATS_MAX_AGE_SECONDS = 600;
+
+/** Buy-in sugerido ao criar uma sessão (cêntimos). Cada sessão pode mudar o seu. */
+export const DEFAULT_BUY_IN_CENTS = 300;

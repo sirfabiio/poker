@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireViewerPage } from "@/lib/identity";
 import { getActivePlayers, getSessionRows } from "@/lib/queries";
 import { todayInput } from "@/lib/format";
+import { DEFAULT_BUY_IN_CENTS } from "@/lib/config";
 import { Sheet } from "@/components/ui/Sheet";
 import { Card } from "@/components/ui/Card";
 import { SessionItem } from "@/components/SessionItem";
@@ -22,7 +23,7 @@ export default async function Sessions() {
       <header className="mb-5 flex items-center justify-between gap-3">
         <h1 className="font-display text-[24px] font-semibold">Sessões</h1>
         <Sheet label="+ Nova sessão" title="Nova sessão" variant="primary">
-          <NewSessionForm players={players} today={todayInput()} defaultBuyIn={2000} />
+          <NewSessionForm players={players} today={todayInput()} defaultBuyIn={DEFAULT_BUY_IN_CENTS} />
         </Sheet>
       </header>
 
