@@ -16,6 +16,7 @@ export function Sheet({
   size = "md",
   triggerClassName = "",
   disabled,
+  onOpenChange,
 }: {
   label: ReactNode;
   title: string;
@@ -24,6 +25,8 @@ export function Sheet({
   size?: "sm" | "md" | "lg";
   triggerClassName?: string;
   disabled?: boolean;
+  /** avisa quando abre e fecha (ex.: manter a folha montada enquanto está aberta) */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
@@ -35,7 +38,10 @@ export function Sheet({
         type="button"
         disabled={disabled}
         className={buttonClass(variant, size, triggerClassName)}
-        onClick={() => ref.current?.showModal()}
+        onClick={() => {
+          ref.current?.showModal();
+          onOpenChange?.(true);
+        }}
       >
         {label}
       </button>
@@ -43,6 +49,7 @@ export function Sheet({
         ref={ref}
         className="sheet"
         aria-labelledby={id}
+        onClose={() => onOpenChange?.(false)}
         onClick={(e) => {
           if (e.target === ref.current) close();
         }}

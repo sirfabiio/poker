@@ -7,6 +7,7 @@ import { getActivePlayers, getSessionDetail } from "@/lib/queries";
 import { formatDay, toDateInput } from "@/lib/format";
 import { Sheet } from "@/components/ui/Sheet";
 import { SessionLive } from "@/components/session/SessionLive";
+import { LiveSession } from "@/components/session/LiveSession";
 import { AddPlayersForm } from "@/components/session/AddPlayersForm";
 import { EditSessionForm } from "@/components/session/EditSessionForm";
 import { DeleteSessionForm } from "@/components/session/DeleteSessionForm";
@@ -14,12 +15,13 @@ import { DeleteSessionForm } from "@/components/session/DeleteSessionForm";
 export const metadata: Metadata = { title: "Sessão" };
 
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireViewerPage();
+  const viewer = await requireViewerPage();
   const { id } = await params;
   const [s, active, admin] = await Promise.all([getSessionDetail(id), getActivePlayers(), isAdmin()]);
   if (!s) notFound();
   const editable = !s.settlement;
   const inSession = new Set(s.players.map((p) => p.playerId));
+  const names = Object.fromEntries([...active.map((p) => [p.id, p.name]), ...s.players.map((p) => [p.playerId, p.player.name])]);
 
   return (
     <>
@@ -58,31 +60,33 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      <SessionLive
-        sessionId={s.id}
-        isAdmin={admin}
-        reconciliation={
-          s.reconciledAt && s.adjustmentMethod && s.discrepancy !== null
-            ? {
-                method: s.adjustmentMethod,
-                discrepancy: s.discrepancy,
-                byName: s.reconciledBy?.name ?? null,
-                playerName: s.adjustmentPlayer?.name ?? null,
-              }
-            : null
-        }
-        editable={editable}
-        defaultBuyIn={s.defaultBuyIn}
-        players={s.players.map((p) => ({
-          id: p.id,
-          playerId: p.playerId,
-          name: p.player.name,
-          avatarColor: p.player.avatarColor,
-          cashOut: p.cashOut,
-          adjustment: p.adjustment,
-          buyIns: p.buyIns,
-        }))}
-      />
+      <LiveSession sessionId={s.id} version={s.version} viewerId={viewer.id} names={names} settled={!editable}>
+        <SessionLive
+          sessionId={s.id}
+          isAdmin={admin}
+          reconciliation={
+            s.reconciledAt && s.adjustmentMethod && s.discrepancy !== null
+              ? {
+                  method: s.adjustmentMethod,
+                  discrepancy: s.discrepancy,
+                  byName: s.reconciledBy?.name ?? null,
+                  playerName: s.adjustmentPlayer?.name ?? null,
+                }
+              : null
+          }
+          editable={editable}
+          defaultBuyIn={s.defaultBuyIn}
+          players={s.players.map((p) => ({
+            id: p.id,
+            playerId: p.playerId,
+            name: p.player.name,
+            avatarColor: p.player.avatarColor,
+            cashOut: p.cashOut,
+            adjustment: p.adjustment,
+            buyIns: p.buyIns,
+          }))}
+        />
+      </LiveSession>
     </>
   );
 }

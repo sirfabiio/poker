@@ -148,6 +148,7 @@ export function getSessionDetail(id: string) {
       date: true,
       notes: true,
       defaultBuyIn: true,
+      version: true,
       discrepancy: true,
       adjustmentMethod: true,
       reconciledAt: true,
