@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { STATS_TAG } from "../config";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
@@ -9,7 +10,7 @@ import { requirePlayer } from "../identity";
 import { logActivity } from "../activity";
 import { isValidAmount, formatCents } from "../money";
 import { formatDay, parseDateInput } from "../format";
-import { checkAdminPin, isAdmin } from "../admin";
+import { checkAdminPin, isAdmin, requireAdmin } from "../admin";
 import { exceedsSoftLimit, isReconcileMethod, METHOD_LABELS, reconcile, ReconcileError, type ReconcileMethod } from "../reconcile";
 
 const CLOSED = "Esta sessão já foi fechada nas contas e não pode ser editada.";
@@ -82,6 +83,7 @@ async function assertActivePlayers(tx: Prisma.TransactionClient, ids: string[]) 
 }
 
 const done = (sessionId?: string) => {
+  revalidateTag(STATS_TAG); // ranking e estatísticas
   revalidatePath("/", "layout");
   return sessionId;
 };
@@ -376,5 +378,38 @@ export async function undoReconcile(sessionId: string): Promise<ActionResult> {
     return {};
   });
   if (r.ok) done(sessionId);
+  return r;
+}
+
+/** Apagar uma sessão em aberto (só admin). Jogadores e entradas da sessão saem em cascata. */
+export async function deleteSession(sessionId: string): Promise<ActionResult> {
+  const r = await run(async () => {
+    const viewer = await requirePlayer();
+    await requireAdmin();
+    await db.$transaction(async (tx) => {
+      // Também recusa sessões já ligadas a um fecho: essas nunca podem ser alteradas.
+      const s = await lockOpenSession(tx, sessionId);
+      const players = await tx.sessionPlayer.findMany({
+        where: { sessionId },
+        select: { player: { select: { name: true } }, buyIns: { select: { amount: true } } },
+      });
+      const pot = players.reduce((a, p) => a + p.buyIns.reduce((b, x) => b + x.amount, 0), 0);
+      await tx.session.delete({ where: { id: sessionId } });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        action: "session.delete",
+        entityType: "session",
+        entityId: sessionId,
+        summary: `${viewer.name} (admin) apagou a sessão de ${formatDay(s.date)} (${players.length} jogadores: ${
+          players.map((p) => p.player.name).join(", ") || "nenhum"
+        }; pote ${formatCents(pot)})`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) {
+    done();
+    redirect("/sessoes");
+  }
   return r;
 }

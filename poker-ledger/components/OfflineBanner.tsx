@@ -12,6 +12,15 @@ export function OfflineBanner() {
   const online = useOnline();
   const router = useRouter();
 
+  // Regista o service worker (só existe no build de produção). Protegido: alguns browsers/políticas
+  // não deixam usar service workers e a app tem de funcionar na mesma.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    try {
+      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+    } catch {}
+  }, []);
+
   useEffect(() => {
     const w = window as Window & { __plStale?: number };
     let last = 0;

@@ -18,9 +18,9 @@ const PLAYERS = [
   { name: "Tiago", avatarColor: "ink", ibanOrMbway: null },
 ];
 
-// [jogador, buy-ins (cêntimos), cash-out (cêntimos) | null]
-type Row = [string, number[], number | null];
-const SESSIONS: { date: string; notes?: string; rows: Row[] }[] = [
+// [jogador, buy-ins (cêntimos), cash-out (cêntimos) | null, ajuste de contagem (cêntimos)]
+type Row = [string, number[], number | null, number?];
+const SESSIONS: { date: string; notes?: string; adjusted?: number; rows: Row[] }[] = [
   {
     date: "2026-09-12",
     notes: "Casa do Rui",
@@ -42,11 +42,12 @@ const SESSIONS: { date: string; notes?: string; rows: Row[] }[] = [
   },
   {
     date: "2026-10-02",
-    notes: "Ainda falta o cash-out do Tiago",
+    notes: "Sobraram 3 € na contagem (ajuste igual por todos)",
+    adjusted: 300,
     rows: [
-      ["Rui", [2000, 2000], 3100],
-      ["Ana", [2000], 1500],
-      ["Tiago", [2000], null],
+      ["Rui", [2000, 2000], 3100, -100],
+      ["Ana", [2000], 1500, -100],
+      ["Tiago", [2000], 3700, -100],
     ],
   },
 ];
@@ -80,10 +81,14 @@ async function main() {
         notes: s.notes,
         defaultBuyIn: 2000,
         createdByPlayerId: rui,
+        ...(s.adjusted
+          ? { discrepancy: s.adjusted, adjustmentMethod: "EQUAL" as const, reconciledAt: new Date(), reconciledByPlayerId: rui }
+          : {}),
         players: {
-          create: s.rows.map(([name, buyIns, cashOut]) => ({
+          create: s.rows.map(([name, buyIns, cashOut, adjustment]) => ({
             playerId: ids.get(name)!,
             cashOut,
+            adjustment: adjustment ?? 0,
             buyIns: { create: buyIns.map((amount) => ({ amount })) },
           })),
         },

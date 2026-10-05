@@ -1,6 +1,10 @@
 // Leituras por página: só os campos necessários, sem N+1.
+import { createHash } from "node:crypto";
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { db } from "./db";
+import type { StatsSessionInput } from "./stats";
+import { STATS_MAX_AGE_SECONDS, STATS_TAG } from "./config";
 import { checkSession, playerNet, summarizeOpen, type SessionCheck } from "./ledger";
 import { computeTransfers, type PlannedTransfer } from "./settle";
 
@@ -254,3 +258,70 @@ export function getAllPlayers() {
     select: { id: true, name: true, avatarColor: true, active: true },
   });
 }
+
+
+type StatsRow = {
+  sessionId: string;
+  date: Date;
+  reconciled: boolean;
+  playerId: string;
+  name: string;
+  avatarColor: string;
+  active: boolean;
+  cashOut: number | null;
+  adjustment: number;
+  buyInTotal: number;
+  buyInCount: number;
+};
+
+/**
+ * Todas as sessões para o ranking numa ÚNICA query (sessão × jogador, com soma e contagem de entradas).
+ * Usa os índices existentes: SessionPlayer(sessionId, playerId) e BuyIn(sessionPlayerId).
+ * O resultado fica em cache (datas como texto, porque a cache serializa em JSON) até revalidateTag(STATS_TAG).
+ */
+const loadStatsRows = unstable_cache(
+  async () => {
+    const rows = await db.$queryRaw<StatsRow[]>`
+      SELECT s."id" AS "sessionId", s."date", (s."reconciledAt" IS NOT NULL) AS "reconciled",
+        sp."playerId", p."name", p."avatarColor", p."active", sp."cashOut", sp."adjustment",
+        COALESCE(SUM(b."amount"), 0)::int AS "buyInTotal", COUNT(b."id")::int AS "buyInCount"
+      FROM "Session" s
+      JOIN "SessionPlayer" sp ON sp."sessionId" = s."id"
+      JOIN "Player" p ON p."id" = sp."playerId"
+      LEFT JOIN "BuyIn" b ON b."sessionPlayerId" = sp."id"
+      GROUP BY s."id", sp."id", p."id"
+      ORDER BY s."date", s."createdAt", s."id"`;
+    return rows.map((r) => ({ ...r, date: r.date.toISOString() }));
+  },
+  // A chave inclui uma impressão da base de dados (hash, nunca a URL): deployments ligados a bases
+  // diferentes (ex.: preview com a branch dev) nunca partilham entradas da cache.
+  ["stats-rows-v1", createHash("sha256").update(process.env.DATABASE_URL ?? "").digest("hex").slice(0, 16)],
+  // A tag é invalidada em todas as escritas da app; os 10 min são só uma rede de segurança para
+  // alterações feitas fora da app (ex.: apagar dados de teste no SQL Editor do Neon).
+  { tags: [STATS_TAG], revalidate: STATS_MAX_AGE_SECONDS },
+);
+
+export const getStatsSessions = cache(async (): Promise<StatsSessionInput[]> => {
+  const rows = await loadStatsRows();
+  const out: StatsSessionInput[] = [];
+  const byId = new Map<string, StatsSessionInput & { players: StatsSessionInput["players"][number][] }>();
+  for (const r of rows) {
+    let s = byId.get(r.sessionId);
+    if (!s) {
+      s = { id: r.sessionId, date: new Date(r.date), reconciled: r.reconciled, players: [] };
+      byId.set(r.sessionId, s);
+      out.push(s);
+    }
+    s.players.push({
+      playerId: r.playerId,
+      name: r.name,
+      avatarColor: r.avatarColor,
+      active: r.active,
+      cashOut: r.cashOut,
+      adjustment: r.adjustment,
+      buyInTotal: r.buyInTotal,
+      buyInCount: r.buyInCount,
+    });
+  }
+  return out;
+});

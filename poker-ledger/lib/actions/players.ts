@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { STATS_TAG } from "../config";
 import { redirect } from "next/navigation";
 import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
@@ -114,7 +115,10 @@ export async function updateMyProfile(_: unknown, form: FormData): Promise<Actio
     });
     return {};
   });
-  if (r.ok) revalidatePath("/", "layout");
+  if (r.ok) {
+    revalidateTag(STATS_TAG); // nomes, cores e estado aparecem no ranking
+    revalidatePath("/", "layout");
+  }
   return r;
 }
 
@@ -166,7 +170,10 @@ export async function renamePlayer(playerId: string, name: string): Promise<Acti
     });
     return {};
   });
-  if (r.ok) revalidatePath("/", "layout");
+  if (r.ok) {
+    revalidateTag(STATS_TAG); // nomes, cores e estado aparecem no ranking
+    revalidatePath("/", "layout");
+  }
   return r;
 }
 
@@ -190,7 +197,10 @@ export async function setPlayerActive(playerId: string, active: boolean): Promis
     });
     return {};
   });
-  if (r.ok) revalidatePath("/", "layout");
+  if (r.ok) {
+    revalidateTag(STATS_TAG); // nomes, cores e estado aparecem no ranking
+    revalidatePath("/", "layout");
+  }
   return r;
 }
 

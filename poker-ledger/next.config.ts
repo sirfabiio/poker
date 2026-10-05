@@ -7,6 +7,9 @@ const withSerwist = withSerwistInit({
   // Em desenvolvimento o service worker atrapalha (cache); só existe no build de produção.
   disable: process.env.NODE_ENV === "development",
   reloadOnOnline: false,
+  // Registo manual em components/OfflineBanner.tsx: o registo automático do Serwist lança
+  // "Cannot read properties of undefined (reading 'waiting')" quando o browser bloqueia service workers.
+  register: false,
   additionalPrecacheEntries: [{ url: "/offline", revision: "1" }],
 });
 

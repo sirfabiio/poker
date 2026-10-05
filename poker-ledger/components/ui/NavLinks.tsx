@@ -8,6 +8,7 @@ const P = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLineca
 const items = [
   { href: "/", label: "Início", icon: <path {...P} d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" /> },
   { href: "/sessoes", label: "Sessões", icon: <><rect {...P} x="3" y="5" width="12" height="16" rx="2" /><path {...P} d="M18 4.5l3 1-4 14" /></> },
+  { href: "/ranking", label: "Ranking", icon: <><path {...P} d="M7 4h10v5a5 5 0 0 1-10 0z" /><path {...P} d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v3M8.5 21h7M9.5 17h5v4h-5z" /></> },
   { href: "/contas", label: "Contas", icon: <><circle {...P} cx="12" cy="12" r="8.5" /><circle {...P} cx="12" cy="12" r="4" strokeDasharray="2.5 2" /></> },
   { href: "/eu", label: "Eu", icon: <><circle {...P} cx="12" cy="8" r="4" /><path {...P} d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></> },
 ];
@@ -15,7 +16,7 @@ const items = [
 export function NavLinks() {
   const path = usePathname();
   return (
-    <ul className="grid grid-cols-4">
+    <ul className="grid grid-cols-5">
       {items.map((it) => {
         const active = it.href === "/" ? path === "/" : path.startsWith(it.href);
         return (

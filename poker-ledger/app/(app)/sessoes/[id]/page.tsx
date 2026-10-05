@@ -9,6 +9,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { SessionLive } from "@/components/session/SessionLive";
 import { AddPlayersForm } from "@/components/session/AddPlayersForm";
 import { EditSessionForm } from "@/components/session/EditSessionForm";
+import { DeleteSessionForm } from "@/components/session/DeleteSessionForm";
 
 export const metadata: Metadata = { title: "Sessão" };
 
@@ -49,6 +50,11 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
           <Sheet label="Editar sessão" title="Editar sessão" size="sm">
             <EditSessionForm sessionId={s.id} date={toDateInput(s.date)} defaultBuyIn={s.defaultBuyIn} notes={s.notes ?? ""} />
           </Sheet>
+          {admin && (
+            <Sheet label="Apagar sessão" title="Apagar sessão" variant="danger" size="sm">
+              <DeleteSessionForm sessionId={s.id} summary={`a sessão de ${formatDay(s.date)}`} />
+            </Sheet>
+          )}
         </div>
       )}
 
