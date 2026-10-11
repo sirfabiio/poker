@@ -11,15 +11,20 @@ datasource db {
 }
 
 model Player {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   name              String
   /// Nome normalizado (trim + minúsculas): garante unicidade case-insensitive.
-  nameKey           String   @unique
+  nameKey           String    @unique
   avatarColor       String
-  active            Boolean  @default(true)
+  active            Boolean   @default(true)
   ibanOrMbway       String?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
   createdByPlayerId String?
+  /// Hash scrypt do PIN pessoal (com salt). NUNCA o PIN em texto. null = ainda não definiu (define no primeiro acesso).
+  pinHash           String?
+  /// Tentativas de login falhadas seguidas; ao chegar ao limite bloqueia até lockedUntil.
+  failedPinAttempts Int       @default(0)
+  lockedUntil       DateTime?
 
   createdBy      Player?         @relation("PlayerCreatedBy", fields: [createdByPlayerId], references: [id], onDelete: SetNull)
   createdPlayers Player[]        @relation("PlayerCreatedBy")
@@ -30,8 +35,22 @@ model Player {
   transfersOut   Transfer[]      @relation("TransferFrom")
   transfersIn    Transfer[]      @relation("TransferTo")
   activity       ActivityLog[]
+  authSessions   AuthSession[]
 
   @@index([createdByPlayerId])
+}
+
+/// Sessão de login (persistente). O cookie leva um token aleatório; aqui só fica o hash SHA-256 desse token.
+model AuthSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  playerId  String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
 }
 
 model Session {
@@ -60,7 +79,7 @@ model Session {
   /// adjustment_confirmed, adjustment_undone, session_settled (lib/live/bump.ts)
   lastChangeType    String?
 
-  createdBy       Player          @relation("SessionCreatedBy", fields: [createdByPlayerId], references: [id])
+  createdBy        Player          @relation("SessionCreatedBy", fields: [createdByPlayerId], references: [id])
   adjustmentPlayer Player?         @relation("SessionAdjustmentPlayer", fields: [adjustmentPlayerId], references: [id])
   reconciledBy     Player?         @relation("SessionReconciledBy", fields: [reconciledByPlayerId], references: [id])
   settlement       Settlement?     @relation(fields: [settlementId], references: [id])

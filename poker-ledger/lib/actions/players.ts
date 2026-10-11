@@ -2,10 +2,9 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { STATS_TAG } from "../config";
-import { redirect } from "next/navigation";
 import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
-import { clearViewerCookie, requirePlayer, setViewerCookie } from "../identity";
+import { requirePlayer } from "../identity";
 import { endAdminSession, requireAdmin, startAdminSession } from "../admin";
 import { createPlayer, duplicateMessage, nameKey, validateName, type PlayerSummary } from "../players";
 import { prismaPlayerStore } from "../players-db";
@@ -13,49 +12,6 @@ import { logActivity } from "../activity";
 import { isAvatarColor } from "../colors";
 
 export type AddPlayerResult = ActionResult<{ player: PlayerSummary }> & { existing?: PlayerSummary };
-
-/** "Quem és tu?": escolher um perfil existente. Não escreve na base de dados. */
-export async function chooseProfile(playerId: string): Promise<ActionResult> {
-  const r = await run(async () => {
-    const p = await db.player.findUnique({ where: { id: String(playerId) }, select: { active: true } });
-    if (!p?.active) throw new UserError("Este perfil não existe ou está desativado.");
-    await setViewerCookie(String(playerId));
-    return {};
-  });
-  if (r.ok) redirect("/");
-  return r;
-}
-
-/** "Sou novo aqui": cria o próprio perfil e entra com ele (único pedido de escrita sem perfil). */
-export async function createOwnProfile(name: string): Promise<AddPlayerResult> {
-  let existing: PlayerSummary | undefined;
-  const r = await run(async () => {
-    const res = await db.$transaction(async (tx) => {
-      const out = await createPlayer(prismaPlayerStore(tx), name, null);
-      if (out.ok) {
-        await logActivity(tx, {
-          actorPlayerId: out.player.id,
-          action: "player.create",
-          entityType: "player",
-          entityId: out.player.id,
-          summary: `${out.player.name} criou o seu perfil`,
-        });
-      }
-      return out;
-    });
-    if (!res.ok) {
-      if (res.code === "duplicate") existing = res.existing;
-      throw new UserError(res.error, res.code);
-    }
-    await setViewerCookie(res.player.id);
-    return { player: res.player };
-  });
-  if (r.ok) {
-    revalidatePath("/", "layout");
-    redirect("/");
-  }
-  return { ...r, existing };
-}
 
 /** "+ Adicionar pessoa nova": qualquer perfil pode criar um jogador. */
 export async function addPlayer(name: string): Promise<AddPlayerResult> {
@@ -120,12 +76,6 @@ export async function updateMyProfile(_: unknown, form: FormData): Promise<Actio
     revalidatePath("/", "layout");
   }
   return r;
-}
-
-export async function switchProfile() {
-  await clearViewerCookie();
-  await endAdminSession();
-  redirect("/quem-es");
 }
 
 // ---------- Admin ----------
@@ -204,7 +154,3 @@ export async function setPlayerActive(playerId: string, active: boolean): Promis
   return r;
 }
 
-/** Versão para <form action>: escolher perfil sem JavaScript. */
-export async function chooseProfileForm(playerId: string): Promise<void> {
-  await chooseProfile(playerId);
-}

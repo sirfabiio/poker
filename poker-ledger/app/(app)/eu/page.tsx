@@ -4,7 +4,7 @@ import { requireViewerPage } from "@/lib/identity";
 import { isAdmin } from "@/lib/admin";
 import { getMyHistory, getOpenState, getStatsSessions } from "@/lib/queries";
 import { computeStats } from "@/lib/stats";
-import { switchProfile } from "@/lib/actions/players";
+import { logout } from "@/lib/actions/auth";
 import { formatDay } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
@@ -153,9 +153,9 @@ export default async function Me() {
         <Button href="/admin" variant="secondary">
           {admin ? "Admin: jogadores" : "Entrar como admin"}
         </Button>
-        <form action={switchProfile}>
+        <form action={logout}>
           <button type="submit" className={buttonClass("ghost", "md", "w-full")}>
-            Trocar de perfil
+            Terminar sessão
           </button>
         </form>
       </div>
