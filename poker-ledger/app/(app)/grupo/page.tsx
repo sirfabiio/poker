@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireGroupPage } from "@/lib/group";
-import { getGroupMembers } from "@/lib/queries";
+import { getGroupMembers, getJoinCandidates } from "@/lib/queries";
 import { describeObligations, groupDeleteBlockers, groupObligations } from "@/lib/obligations";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/SectionTitle";
@@ -19,10 +19,11 @@ export const metadata: Metadata = { title: "Grupo" };
 export default async function GroupSettings() {
   const { viewer, groupId, groupName, role } = await requireGroupPage();
   const admin = role === "ADMIN";
-  const [members, obligations, deleteBlockers] = await Promise.all([
+  const [members, obligations, deleteBlockers, candidates] = await Promise.all([
     admin ? getGroupMembers(groupId) : [],
     groupObligations(groupId),
     admin ? groupDeleteBlockers(groupId) : [],
+    admin ? getJoinCandidates(groupId) : [],
   ]);
   const mine = obligations.get(viewer.id);
   const others = members.filter((m) => m.active && m.id !== viewer.id);
@@ -49,7 +50,7 @@ export default async function GroupSettings() {
 
           <SectionTitle>Juntar membro</SectionTitle>
           <Card>
-            <AddMemberForm />
+            <AddMemberForm candidates={candidates} />
           </Card>
 
           <SectionTitle>Membros</SectionTitle>

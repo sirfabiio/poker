@@ -366,3 +366,16 @@ export const getStatsSessions = cache(async (groupId: string): Promise<StatsSess
   }
   return out;
 });
+
+/**
+ * Pessoas que o admin pode juntar ao grupo: todos os perfis ativos da app que ainda não são membros ativos
+ * deste grupo (inclui quem foi removido daqui). Só nome e cor: nada sobre os outros grupos.
+ */
+export async function getJoinCandidates(groupId: string) {
+  const rows = await db.player.findMany({
+    where: { active: true, NOT: { memberships: { some: { groupId, active: true } } } },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, avatarColor: true, memberships: { where: { groupId }, select: { id: true } } },
+  });
+  return rows.map((p) => ({ id: p.id, name: p.name, avatarColor: p.avatarColor, removedHere: p.memberships.length > 0 }));
+}
