@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import Link from "next/link";
 import { masterResetPin } from "@/lib/actions/master";
 import { PIN_MAX, PIN_MIN } from "@/lib/pin-rules";
 import { buttonClass } from "@/components/ui/Button";
+import { useSheet } from "@/components/ui/Sheet";
 import { useOnline, OFFLINE_HINT } from "@/lib/use-online";
 
 const field = "h-11 w-full rounded-xl border border-white/20 bg-ink/40 px-3";
@@ -13,15 +13,16 @@ const field = "h-11 w-full rounded-xl border border-white/20 bg-ink/40 px-3";
 export function MasterResetForm() {
   const [state, action, pending] = useActionState(masterResetPin, null);
   const online = useOnline();
+  const { close } = useSheet();
   if (state?.ok) {
     return (
       <div className="space-y-4" role="status">
         <p className="text-ivory/90">
           PIN de <strong>{state.name}</strong> reposto. As sessões abertas dessa pessoa terminaram; entra agora com o PIN novo.
         </p>
-        <Link href="/quem-es" className={buttonClass("primary", "md", "w-full")}>
-          Ir para Entrar
-        </Link>
+        <button type="button" onClick={close} className={buttonClass("primary", "md", "w-full")}>
+          Entrar
+        </button>
       </div>
     );
   }

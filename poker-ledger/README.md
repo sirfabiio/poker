@@ -31,7 +31,7 @@ Cada pessoa entra com o **nome e um PIN pessoal** (4 a 8 algarismos). Quem já e
 - A sessão fica aberta no dispositivo (cookie httpOnly `pl_session`, 1 ano). Na BD só fica o SHA-256 do token (`AuthSession`). "Terminar sessão" apaga-a.
 - "Trocar o meu PIN" (em **Eu**) pede o PIN atual e termina as sessões nos outros dispositivos.
 - Não há recuperação por email: quem se esquece pede ao admin do grupo para lhe definir um PIN novo (isso termina as sessões dessa pessoa).
-- **Chave mestra (`ADMIN_PIN`):** em `/chave-mestra` (página sem links na app), quem tem a chave repõe o PIN de qualquer pessoa, mesmo a que está em vários grupos (onde o admin de um grupo não pode). Termina as sessões dessa pessoa e fica na atividade. Cada tentativa errada conta para o bloqueio do perfil dessa pessoa (5 falhas → 15 min), por isso a chave não se adivinha por tentativa e erro. Sem `ADMIN_PIN` (ou com menos de 6 algarismos) a página recusa. Se a chave for descoberta: muda o valor na Vercel e faz Redeploy.
+- **Chave mestra (`ADMIN_PIN`):** em **Entrar → "Esqueci-me do PIN"**, quem tem a chave repõe o PIN de qualquer pessoa, mesmo a que está em vários grupos (onde o admin de um grupo não pode). Termina as sessões dessa pessoa e fica na atividade. Cada tentativa errada conta para o bloqueio do perfil dessa pessoa (5 falhas → 15 min), por isso a chave não se adivinha por tentativa e erro. Sem `ADMIN_PIN` (ou com menos de 6 algarismos) a página recusa. Se a chave for descoberta: muda o valor na Vercel e faz Redeploy.
 
 ## Grupos
 

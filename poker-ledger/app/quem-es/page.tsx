@@ -6,6 +6,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { SuitDivider } from "@/components/ui/SuitDivider";
 import { LoginForm } from "@/components/profile/LoginForm";
 import { NewProfileForm } from "@/components/profile/NewProfileForm";
+import { MasterResetForm } from "@/components/profile/MasterResetForm";
 
 export const metadata: Metadata = { title: "Entrar" };
 export const dynamic = "force-dynamic";
@@ -21,9 +22,15 @@ export default async function SignIn() {
       <Card>
         <LoginForm />
       </Card>
-      <p className="mt-3 text-center text-[13px] text-ivory/75">
-        Esqueceste-te do PIN? Pede ao admin do teu grupo, ou a quem tem a chave mestra, para o repor.
-      </p>
+      <div className="mt-3 flex justify-center">
+        <Sheet label="Esqueci-me do PIN" title="Esqueci-me do PIN" variant="ghost" size="sm">
+          <p className="mb-4 text-sm text-ivory/85">
+            Pede ao admin do teu grupo para te definir um PIN novo (em Grupo → Membros → Definir PIN). Se estiveres em vários grupos ou o admin não
+            puder, quem tem a <strong>chave mestra</strong> repõe-no aqui.
+          </p>
+          <MasterResetForm />
+        </Sheet>
+      </div>
       <SuitDivider />
       <div className="flex justify-center">
         <Sheet label="Sou novo aqui" title="Sou novo aqui" variant="secondary" size="lg">
