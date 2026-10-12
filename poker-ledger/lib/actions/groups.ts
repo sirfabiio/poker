@@ -6,6 +6,7 @@ import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
 import { getViewer, requirePlayer } from "../identity";
 import { setGroupCookie } from "../group";
+import { requireAdmin } from "../admin";
 import { logActivity } from "../activity";
 
 /** Criar um grupo: quem cria fica automaticamente admin desse grupo (e só desse). */
@@ -52,4 +53,42 @@ export async function switchGroup(groupId: string): Promise<void> {
   await setGroupCookie(String(groupId));
   revalidatePath("/", "layout");
   redirect("/");
+}
+
+const groupNameKey = (n: string) => n.trim().toLocaleLowerCase("pt-PT");
+
+function validateGroupName(raw: unknown): string {
+  const name = String(raw ?? "").trim();
+  if (name.length < 2 || name.length > 40) throw new UserError("O nome do grupo tem de ter entre 2 e 40 caracteres.");
+  return name;
+}
+
+/** Renomear o grupo atual (só admin). O nome não pode repetir outro grupo de quem está a renomear. */
+export async function renameGroup(_: unknown, form: FormData): Promise<ActionResult> {
+  const r = await run(async () => {
+    const { viewer, groupId, groupName } = await requireAdmin();
+    const name = validateGroupName(form.get("name"));
+    if (name === groupName) return {};
+    const mine = await db.membership.findMany({
+      where: { playerId: viewer.id, active: true, groupId: { not: groupId } },
+      select: { group: { select: { name: true } } },
+    });
+    if (mine.some((m) => groupNameKey(m.group.name) === groupNameKey(name))) {
+      throw new UserError(`Já estás noutro grupo chamado “${name}”. Escolhe outro nome.`, "duplicate");
+    }
+    await db.$transaction(async (tx) => {
+      await tx.group.update({ where: { id: groupId }, data: { name } });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        groupId,
+        action: "group.rename",
+        entityType: "group",
+        entityId: groupId,
+        summary: `${viewer.name} (admin) mudou o nome do grupo de “${groupName}” para “${name}”`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) revalidatePath("/", "layout");
+  return r;
 }

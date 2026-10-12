@@ -12,6 +12,7 @@ import { canManageAccount, requireAdmin } from "../admin";
 import { createPlayer, duplicateMessage, nameKey, validateName, type PlayerSummary } from "../players";
 import { prismaPlayerStore } from "../players-db";
 import { logActivity } from "../activity";
+import { describeObligations, hasObligations, memberObligations } from "../obligations";
 import { isAvatarColor } from "../colors";
 import { AFTER_SUCCESS, hashPin, hashToken, validatePin, verifyPin } from "../pin";
 
@@ -180,24 +181,57 @@ export async function renamePlayer(playerId: string, name: string): Promise<Acti
   return r;
 }
 
-/** Desativa ou reativa o jogador NESTE grupo (a pertença). Nunca se apagam jogadores nem histórico. */
-export async function setPlayerActive(playerId: string, active: boolean): Promise<ActionResult> {
+/**
+ * Remover um membro do grupo (só admin, nunca a si próprio): a pertença fica inativa, a pessoa deixa de ver o grupo
+ * e o histórico mantém-se. Bloqueado se a pessoa ainda deve ou tem a receber neste grupo.
+ */
+export async function removeMember(playerId: string): Promise<ActionResult> {
   const r = await run(async () => {
     const { viewer, groupId } = await requireAdmin();
-    if (playerId === viewer.id && !active) throw new UserError("Não te podes desativar a ti próprio.");
+    if (playerId === viewer.id) {
+      throw new UserError("Não te podes remover a ti próprio. Para saíres, passa primeiro o admin a outra pessoa.");
+    }
+    const m = await db.membership.findUnique({
+      where: { groupId_playerId: { groupId, playerId: String(playerId) } },
+      select: { active: true, player: { select: { name: true } } },
+    });
+    if (!m) throw new UserError("Este jogador não é membro do teu grupo.");
+    if (!m.active) throw new UserError(`${m.player.name} já não está no grupo.`);
+    const o = await memberObligations(groupId, playerId);
+    if (hasObligations(o)) {
+      throw new UserError(`Ainda não dá para remover ${m.player.name}: ${describeObligations(o, m.player.name).join(" ")}`, "has_debts");
+    }
     await db.$transaction(async (tx) => {
-      const t = await memberForAdmin(tx, groupId, viewer.id, playerId);
-      await tx.membership.update({
-        where: { groupId_playerId: { groupId, playerId } },
-        data: { active: Boolean(active) },
-      });
+      await tx.membership.update({ where: { groupId_playerId: { groupId, playerId } }, data: { active: false } });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
         groupId,
-        action: active ? "player.activate" : "player.deactivate",
+        action: "group.removeMember",
         entityType: "player",
         entityId: playerId,
-        summary: `${viewer.name} (admin) ${active ? "reativou" : "desativou"} ${t.name} no grupo`,
+        summary: `${viewer.name} (admin) removeu ${m.player.name} do grupo`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) refresh();
+  return r;
+}
+
+/** Voltar a juntar ao grupo alguém que foi removido (só admin). */
+export async function readmitMember(playerId: string): Promise<ActionResult> {
+  const r = await run(async () => {
+    const { viewer, groupId } = await requireAdmin();
+    await db.$transaction(async (tx) => {
+      const t = await memberForAdmin(tx, groupId, viewer.id, playerId);
+      await tx.membership.update({ where: { groupId_playerId: { groupId, playerId } }, data: { active: true } });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        groupId,
+        action: "group.addMember",
+        entityType: "player",
+        entityId: playerId,
+        summary: `${viewer.name} (admin) voltou a juntar ${t.name} ao grupo`,
       });
     });
     return {};

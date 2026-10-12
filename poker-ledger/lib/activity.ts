@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 export type ActivityInput = {
   actorPlayerId: string;
   action: string;
-  entityType: "player" | "session" | "buyin" | "sessionPlayer" | "settlement" | "transfer";
+  entityType: "player" | "session" | "buyin" | "sessionPlayer" | "settlement" | "transfer" | "group";
   entityId: string;
   summary: string;
   /** Grupo onde aconteceu (null = evento pessoal, ex.: criar perfil ou definir PIN). */

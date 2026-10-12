@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireGroupPage } from "@/lib/group";
 import { getGroupMembers } from "@/lib/queries";
+import { describeObligations, groupObligations } from "@/lib/obligations";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/SectionTitle";
 import { AddMemberForm } from "@/components/profile/AddMemberForm";
 import { PlayerAdminRow } from "@/components/profile/PlayerAdminRow";
+import { RenameGroupForm } from "@/components/group/RenameGroupForm";
 
 export const metadata: Metadata = { title: "Grupo" };
 
@@ -13,7 +15,7 @@ export const metadata: Metadata = { title: "Grupo" };
 export default async function GroupSettings() {
   const { viewer, groupId, groupName, role } = await requireGroupPage();
   const admin = role === "ADMIN";
-  const members = admin ? await getGroupMembers(groupId) : [];
+  const [members, obligations] = admin ? await Promise.all([getGroupMembers(groupId), groupObligations(groupId)]) : [[], new Map()];
 
   return (
     <>
@@ -30,6 +32,11 @@ export default async function GroupSettings() {
 
       {admin && (
         <>
+          <SectionTitle>Nome do grupo</SectionTitle>
+          <Card>
+            <RenameGroupForm name={groupName} />
+          </Card>
+
           <SectionTitle>Juntar membro</SectionTitle>
           <Card>
             <AddMemberForm />
@@ -37,12 +44,20 @@ export default async function GroupSettings() {
 
           <SectionTitle>Membros</SectionTitle>
           <p className="mb-3 text-[13px] text-ivory/75">
-            Ninguém é apagado: desativar esconde a pessoa das listas deste grupo e mantém o histórico. Nome e PIN só se mudam aqui se a pessoa não estiver noutro grupo onde não és admin.
+            Remover tira a pessoa deste grupo, mas as sessões e contas antigas ficam iguais e podes voltá-la a juntar. Só dá para remover quem não
+            deve nem tem dinheiro a receber no grupo. O nome e o PIN valem em todos os grupos da pessoa: só os podes mudar se ela estiver apenas em
+            grupos onde és admin; senão, muda-os ela no ecrã “Eu”.
           </p>
           <Card className="py-1">
             <ul className="divide-y divide-white/10">
               {members.map((p) => (
-                <PlayerAdminRow key={p.id} p={p} isMe={p.id === viewer.id} />
+                <PlayerAdminRow
+                  key={p.id}
+                  p={p}
+                  isMe={p.id === viewer.id}
+                  groupName={groupName}
+                  blockers={obligations.has(p.id) ? describeObligations(obligations.get(p.id)!, p.name) : []}
+                />
               ))}
             </ul>
           </Card>

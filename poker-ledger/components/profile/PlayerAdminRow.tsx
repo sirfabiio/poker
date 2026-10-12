@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { renamePlayer, setPlayerActive } from "@/lib/actions/players";
+import { readmitMember, renamePlayer } from "@/lib/actions/players";
 import { Chip } from "@/components/ui/Chip";
 import { buttonClass } from "@/components/ui/Button";
 import { useOnline } from "@/lib/use-online";
+import { Sheet } from "@/components/ui/Sheet";
+import { RemoveMemberForm } from "@/components/group/RemoveMemberForm";
 import { AdminPinForm } from "./AdminPinForm";
 
 type Member = {
@@ -18,7 +20,7 @@ type Member = {
 };
 
 /** Linha de membro na gestão do grupo (só admin; o servidor volta a validar tudo). */
-export function PlayerAdminRow({ p, isMe }: { p: Member; isMe: boolean }) {
+export function PlayerAdminRow({ p, isMe, groupName, blockers }: { p: Member; isMe: boolean; groupName: string; blockers: string[] }) {
   const [open, setOpen] = useState<"rename" | "pin" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -31,7 +33,7 @@ export function PlayerAdminRow({ p, isMe }: { p: Member; isMe: boolean }) {
         <span className="min-w-0 flex-1">
           <span className={`block truncate ${p.active ? "" : "text-ivory/60 line-through"}`}>{p.name}</span>
           <span className="block text-[13px] text-ivory/75">
-            {p.role === "ADMIN" ? "Admin" : "Membro"}
+            {!p.active ? "Removido do grupo" : p.role === "ADMIN" ? "Admin" : "Membro"}
             {!p.hasPin && " · ainda sem PIN"}
             {p.otherGroups > 0 && ` · também noutro${p.otherGroups > 1 ? "s" : ""} grupo${p.otherGroups > 1 ? "s" : ""}`}
           </span>
@@ -44,19 +46,24 @@ export function PlayerAdminRow({ p, isMe }: { p: Member; isMe: boolean }) {
         <button type="button" disabled={!online} onClick={() => setOpen((v) => (v === "pin" ? null : "pin"))} className={buttonClass("secondary", "sm")}>
           Definir PIN
         </button>
-        {!isMe && (
+        {!isMe && p.active && (
+          <Sheet label="Remover" title="Remover do grupo" variant="danger" size="sm" disabled={!online}>
+            <RemoveMemberForm member={p} groupName={groupName} blockers={blockers} />
+          </Sheet>
+        )}
+        {!p.active && (
           <button
             type="button"
             disabled={pending || !online}
             onClick={() =>
               start(async () => {
-                const r = await setPlayerActive(p.id, !p.active);
+                const r = await readmitMember(p.id);
                 setError(r.ok ? null : r.error);
               })
             }
-            className={buttonClass(p.active ? "danger" : "secondary", "sm")}
+            className={buttonClass("secondary", "sm")}
           >
-            {p.active ? "Desativar" : "Reativar"}
+            Voltar a juntar
           </button>
         )}
       </div>
