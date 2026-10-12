@@ -8,7 +8,10 @@ import { PIN_MAX, PIN_MIN } from "@/lib/pin-rules";
 
 const field = "h-12 w-full rounded-2xl border border-white/20 bg-ink/40 px-4 text-ivory";
 
-/** Entrar com nome + PIN. No primeiro acesso (sem PIN definido) pede a confirmação do PIN escolhido. */
+/**
+ * Entrar com nome + PIN. Quem ainda não tem PIN (primeiro acesso) pode escrever só o nome e carregar em Entrar:
+ * aparece logo "Escolhe o teu PIN" com a confirmação.
+ */
 export function LoginForm() {
   const [state, action, pending] = useActionState(login, null);
   const online = useOnline();
@@ -20,13 +23,15 @@ export function LoginForm() {
         <input name="name" defaultValue={state?.name ?? ""} key={state?.name ?? ""} required minLength={2} maxLength={30} autoComplete="username" className={field} />
       </label>
       <label className="block">
-        <span className="mb-1.5 block text-sm text-ivory/80">PIN</span>
+        <span className="mb-1.5 block text-sm text-ivory/80">{confirm ? "Escolhe o teu PIN" : "PIN"}</span>
         <input
+          key={confirm ? "new" : "current"}
           name="pin"
           type="password"
           inputMode="numeric"
           autoComplete={confirm ? "new-password" : "current-password"}
-          required
+          autoFocus={confirm}
+          required={confirm}
           minLength={PIN_MIN}
           maxLength={PIN_MAX}
           pattern="[0-9]*"

@@ -24,7 +24,7 @@ Variáveis de ambiente (ver `.env.example`): `DATABASE_URL` (Neon, ligação poo
 
 ## Entrar: nome + PIN
 
-Cada pessoa entra com o **nome e um PIN pessoal** (4 a 8 algarismos). Quem já existia antes do PIN define-o no **primeiro acesso** (escreve-o duas vezes). Quem é novo usa "Sou novo aqui".
+Cada pessoa entra com o **nome e um PIN pessoal** (4 a 8 algarismos). Quem já existia antes do PIN define-o no **primeiro acesso**: escreve só o nome, carrega em Entrar e escolhe o PIN (duas vezes). Quem já tem PIN e escreve só o nome recebe "Escreve o teu PIN." (não conta como tentativa falhada). Quem é novo usa "Sou novo aqui".
 
 - O PIN nunca é guardado em claro: `scrypt` com salt aleatório por pessoa (`lib/pin.ts`), comparação em tempo constante.
 - **5 tentativas erradas seguidas bloqueiam o perfil 15 minutos** (contador por pessoa, com `SELECT … FOR UPDATE`, por isso tentativas em paralelo não escapam).

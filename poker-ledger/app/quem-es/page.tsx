@@ -17,7 +17,7 @@ export default async function SignIn() {
     <main className="page-in mx-auto w-full max-w-md px-4 pt-[calc(env(safe-area-inset-top)+40px)] pb-16">
       <h1 className="font-display text-[34px] leading-tight font-bold">Entrar</h1>
       <p className="mt-2 mb-6 text-ivory/80">
-        Com o teu nome e PIN. Se é a primeira vez com um perfil que já existe, escolhe agora o teu PIN.
+        Com o teu nome e PIN. Primeira vez com um perfil que já existe? Escreve só o teu nome e carrega em Entrar para escolheres o PIN.
       </p>
       <Card>
         <LoginForm />

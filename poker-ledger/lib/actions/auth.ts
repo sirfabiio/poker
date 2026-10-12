@@ -9,7 +9,7 @@ import { clearGroupCookie } from "../group";
 import { createPlayer, validateName, type PlayerSummary } from "../players";
 import { prismaPlayerStore } from "../players-db";
 import { logActivity } from "../activity";
-import { AFTER_SUCCESS, afterFailure, hashPin, lockRemainingMinutes, MAX_PIN_ATTEMPTS, validatePin, verifyPin } from "../pin";
+import { AFTER_SUCCESS, afterFailure, hashPin, lockRemainingMinutes, MAX_PIN_ATTEMPTS, PIN_MAX, PIN_MIN, validatePin, verifyPin } from "../pin";
 
 export type LoginResult = ActionResult & { needsConfirm?: boolean; name?: string };
 
@@ -27,7 +27,8 @@ export async function login(_: unknown, form: FormData): Promise<LoginResult> {
     const confirm = form.get("pinConfirm");
     const v = validateName(name);
     if ("error" in v) throw new UserError(v.error);
-    const pinError = validatePin(pin);
+    // PIN vazio é aceite só para descobrir o primeiro acesso (quem ainda não tem PIN escolhe-o a seguir).
+    const pinError = pin === "" ? null : validatePin(pin);
     if (pinError) throw new UserError(pinError);
 
     const playerId = await db.$transaction(async (tx) => {
@@ -43,6 +44,10 @@ export async function login(_: unknown, form: FormData): Promise<LoginResult> {
 
       if (!p.pinHash) {
         // Primeiro acesso (opção B): a pessoa escolhe o PIN agora.
+        if (pin === "") {
+          needsConfirm = true;
+          throw new UserError(`Primeiro acesso de ${p.name}: escolhe o teu PIN (${PIN_MIN} a ${PIN_MAX} algarismos) e confirma-o.`, "set_pin");
+        }
         if (confirm === null) {
           needsConfirm = true;
           throw new UserError(`Primeiro acesso de ${p.name}: confirma o PIN que queres usar a partir de agora.`, "set_pin");
@@ -62,6 +67,7 @@ export async function login(_: unknown, form: FormData): Promise<LoginResult> {
         return p.id;
       }
 
+      if (pin === "") throw new UserError("Escreve o teu PIN.", "no_pin");
       if (!verifyPin(pin, p.pinHash)) {
         const next = afterFailure(p);
         await tx.player.update({ where: { id: p.id }, data: next });

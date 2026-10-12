@@ -105,7 +105,7 @@ Abre **http://localhost:3000** no browser.
 **Como sei que correu bem:**
 - `migrate dev` termina com "Your database is now in sync with your schema".
 - `seed` mostra "Seed concluído: 5 jogadores e 3 sessões."
-- `npm run dev` mostra "Ready" e, no browser, aparece o ecrã **Entrar**. Escreve um dos nomes do seed (Ana, Miguel, Rui, Sofia ou Tiago) e um PIN à tua escolha: como é o primeiro acesso, a app pede para o confirmares. Entras no grupo de exemplo "Exemplo" (o Rui é o admin) e vês o painel com o saldo.
+- `npm run dev` mostra "Ready" e, no browser, aparece o ecrã **Entrar**. Escreve um dos nomes do seed (Ana, Miguel, Rui, Sofia ou Tiago) e carrega em **Entrar**: como é o primeiro acesso, a app pede para escolheres o PIN e o confirmares. Entras no grupo de exemplo "Exemplo" (o Rui é o admin) e vês o painel com o saldo.
 - Extra: http://localhost:3000/dev/ui mostra o catálogo de componentes (só existe em desenvolvimento).
 
 ---
