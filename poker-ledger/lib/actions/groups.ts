@@ -1,13 +1,15 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { STATS_TAG } from "../config";
 import { redirect } from "next/navigation";
 import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
 import { getViewer, requirePlayer } from "../identity";
-import { setGroupCookie } from "../group";
+import { clearGroupCookie, requireGroupMember, setGroupCookie } from "../group";
 import { requireAdmin } from "../admin";
 import { logActivity } from "../activity";
+import { describeObligations, groupDeleteBlockers, hasObligations, memberObligations } from "../obligations";
 
 /** Criar um grupo: quem cria fica automaticamente admin desse grupo (e só desse). */
 export async function createGroup(_: unknown, form: FormData): Promise<ActionResult> {
@@ -90,5 +92,101 @@ export async function renameGroup(_: unknown, form: FormData): Promise<ActionRes
     return {};
   });
   if (r.ok) revalidatePath("/", "layout");
+  return r;
+}
+
+/** Passar o admin a outro membro ativo (só admin). Quem passa fica membro normal. */
+export async function transferAdmin(playerId: string): Promise<ActionResult> {
+  const r = await run(async () => {
+    const { viewer, groupId } = await requireAdmin();
+    const target = String(playerId);
+    if (target === viewer.id) throw new UserError("Já és o admin deste grupo.");
+    const m = await db.membership.findUnique({
+      where: { groupId_playerId: { groupId, playerId: target } },
+      select: { active: true, player: { select: { name: true } } },
+    });
+    if (!m?.active) throw new UserError("Só podes passar o admin a um membro deste grupo.");
+    await db.$transaction(async (tx) => {
+      await tx.membership.update({ where: { groupId_playerId: { groupId, playerId: target } }, data: { role: "ADMIN" } });
+      await tx.membership.update({ where: { groupId_playerId: { groupId, playerId: viewer.id } }, data: { role: "MEMBER" } });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        groupId,
+        action: "group.transferAdmin",
+        entityType: "player",
+        entityId: target,
+        summary: `${viewer.name} passou o admin do grupo a ${m.player.name}`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) revalidatePath("/", "layout");
+  return r;
+}
+
+/** Sair do grupo atual: só sem contas por saldar, e o admin tem de passar o admin primeiro. O histórico fica. */
+export async function leaveGroup(): Promise<ActionResult> {
+  const r = await run(async () => {
+    const { viewer, groupId, groupName, role } = await requireGroupMember();
+    if (role === "ADMIN") {
+      throw new UserError("És o admin deste grupo: para saíres, passa primeiro o admin a outra pessoa (ou apaga o grupo).", "is_admin");
+    }
+    const o = await memberObligations(groupId, viewer.id);
+    if (hasObligations(o)) {
+      throw new UserError(`Ainda não podes sair: ${describeObligations(o, "eu").join(" ")}`, "has_debts");
+    }
+    await db.$transaction(async (tx) => {
+      await tx.membership.update({ where: { groupId_playerId: { groupId, playerId: viewer.id } }, data: { active: false } });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        groupId,
+        action: "group.leave",
+        entityType: "group",
+        entityId: groupId,
+        summary: `${viewer.name} saiu do grupo “${groupName}”`,
+      });
+    });
+    await clearGroupCookie();
+    return {};
+  });
+  if (r.ok) {
+    revalidatePath("/", "layout");
+    redirect("/");
+  }
+  return r;
+}
+
+/**
+ * "Apagar" o grupo (só admin): arquiva-o. Todas as pertenças ficam inativas e o grupo desaparece para todos;
+ * sessões, contas e atividade ficam guardadas na base de dados (recuperáveis). Só sem contas por saldar,
+ * e só depois de escrever o nome do grupo.
+ */
+export async function deleteGroup(_: unknown, form: FormData): Promise<ActionResult> {
+  const r = await run(async () => {
+    const { viewer, groupId, groupName } = await requireAdmin();
+    if (String(form.get("confirmName") ?? "").trim() !== groupName.trim()) {
+      throw new UserError("Para confirmar, escreve o nome do grupo exatamente como aparece.", "confirm");
+    }
+    const blockers = await groupDeleteBlockers(groupId);
+    if (blockers.length > 0) throw new UserError(`Ainda não dá para apagar o grupo: ${blockers.join(" ")}`, "has_debts");
+    await db.$transaction(async (tx) => {
+      await tx.membership.updateMany({ where: { groupId }, data: { active: false } });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        groupId,
+        action: "group.delete",
+        entityType: "group",
+        entityId: groupId,
+        summary: `${viewer.name} (admin) apagou o grupo “${groupName}” (fica arquivado)`,
+      });
+    });
+    await clearGroupCookie();
+    return {};
+  });
+  if (r.ok) {
+    revalidateTag(STATS_TAG);
+    revalidatePath("/", "layout");
+    redirect("/");
+  }
   return r;
 }
