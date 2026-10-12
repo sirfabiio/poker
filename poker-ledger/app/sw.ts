@@ -11,7 +11,7 @@ declare const self: ServiceWorkerGlobalScope;
 
 // Nunca guardar em cache: definições do grupo (gestão de membros) e qualquer pedido que não seja GET
 // (as escritas são Server Actions = POST, e nunca passam pela cache).
-const NEVER_CACHE = ["/admin", "/grupo"];
+const NEVER_CACHE = ["/admin", "/grupo", "/chave-mestra"];
 
 /** Só guarda respostas 200 que não sejam redirecionamentos. */
 const okOnly: SerwistPlugin = {

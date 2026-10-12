@@ -21,6 +21,9 @@ export default async function SignIn() {
       <Card>
         <LoginForm />
       </Card>
+      <p className="mt-3 text-center text-[13px] text-ivory/75">
+        Esqueceste-te do PIN? Pede ao admin do teu grupo, ou a quem tem a chave mestra, para o repor.
+      </p>
       <SuitDivider />
       <div className="flex justify-center">
         <Sheet label="Sou novo aqui" title="Sou novo aqui" variant="secondary" size="lg">

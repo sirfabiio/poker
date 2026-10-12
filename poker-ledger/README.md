@@ -20,7 +20,7 @@ Next.js 15 (App Router) · TypeScript · Tailwind CSS 4 · Prisma 6 · PostgreSQ
 
 Outros: `npx prisma migrate dev` (aplica migrações em dev), `node scripts/make-icons.mjs` (regenera os ícones PNG).
 
-Variáveis de ambiente (ver `.env.example`): `DATABASE_URL` (Neon, ligação pooled), `DIRECT_URL` (Neon, ligação direta, para migrações). O `ADMIN_PIN` deixou de ser usado (admins passaram a ser por grupo).
+Variáveis de ambiente (ver `.env.example`): `DATABASE_URL` (Neon, ligação pooled), `DIRECT_URL` (Neon, ligação direta, para migrações), `ADMIN_PIN` (a **chave mestra**, só algarismos, mínimo 6; opcional). Os admins são por grupo; o `ADMIN_PIN` já não dá acesso a ações de admin.
 
 ## Entrar: nome + PIN
 
@@ -31,6 +31,7 @@ Cada pessoa entra com o **nome e um PIN pessoal** (4 a 8 algarismos). Quem já e
 - A sessão fica aberta no dispositivo (cookie httpOnly `pl_session`, 1 ano). Na BD só fica o SHA-256 do token (`AuthSession`). "Terminar sessão" apaga-a.
 - "Trocar o meu PIN" (em **Eu**) pede o PIN atual e termina as sessões nos outros dispositivos.
 - Não há recuperação por email: quem se esquece pede ao admin do grupo para lhe definir um PIN novo (isso termina as sessões dessa pessoa).
+- **Chave mestra (`ADMIN_PIN`):** em `/chave-mestra` (página sem links na app), quem tem a chave repõe o PIN de qualquer pessoa, mesmo a que está em vários grupos (onde o admin de um grupo não pode). Termina as sessões dessa pessoa e fica na atividade. Cada tentativa errada conta para o bloqueio do perfil dessa pessoa (5 falhas → 15 min), por isso a chave não se adivinha por tentativa e erro. Sem `ADMIN_PIN` (ou com menos de 6 algarismos) a página recusa. Se a chave for descoberta: muda o valor na Vercel e faz Redeploy.
 
 ## Grupos
 
