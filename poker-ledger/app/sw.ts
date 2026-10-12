@@ -9,9 +9,9 @@ declare global {
 }
 declare const self: ServiceWorkerGlobalScope;
 
-// Nunca guardar em cache: área de admin (sessão de admin) e qualquer pedido que não seja GET
+// Nunca guardar em cache: definições do grupo (gestão de membros) e qualquer pedido que não seja GET
 // (as escritas são Server Actions = POST, e nunca passam pela cache).
-const NEVER_CACHE = ["/admin"];
+const NEVER_CACHE = ["/admin", "/grupo"];
 
 /** Só guarda respostas 200 que não sejam redirecionamentos. */
 const okOnly: SerwistPlugin = {

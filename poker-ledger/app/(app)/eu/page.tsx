@@ -159,11 +159,6 @@ export default async function Me() {
         <Button href="/grupos" variant="secondary">
           Grupos (atual: {groupName})
         </Button>
-        {admin && (
-          <Button href="/admin" variant="secondary">
-            Admin do grupo: membros
-          </Button>
-        )}
         <form action={logout}>
           <button type="submit" className={buttonClass("ghost", "md", "w-full")}>
             Terminar sessão

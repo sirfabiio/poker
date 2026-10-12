@@ -10,13 +10,24 @@ const items = [
   { href: "/sessoes", label: "Sessões", icon: <><rect {...P} x="3" y="5" width="12" height="16" rx="2" /><path {...P} d="M18 4.5l3 1-4 14" /></> },
   { href: "/ranking", label: "Ranking", icon: <><path {...P} d="M7 4h10v5a5 5 0 0 1-10 0z" /><path {...P} d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v3M8.5 21h7M9.5 17h5v4h-5z" /></> },
   { href: "/contas", label: "Contas", icon: <><circle {...P} cx="12" cy="12" r="8.5" /><circle {...P} cx="12" cy="12" r="4" strokeDasharray="2.5 2" /></> },
+  {
+    href: "/grupo",
+    label: "Grupo",
+    icon: (
+      <>
+        <circle {...P} cx="12" cy="12" r="3" />
+        <path {...P} d="M12 2.5v2.6M12 18.9v2.6M21.5 12h-2.6M5.1 12H2.5M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1 5.3 5.3" />
+        <circle {...P} cx="12" cy="12" r="7" />
+      </>
+    ),
+  },
   { href: "/eu", label: "Eu", icon: <><circle {...P} cx="12" cy="8" r="4" /><path {...P} d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></> },
 ];
 
 export function NavLinks() {
   const path = usePathname();
   return (
-    <ul className="grid grid-cols-5">
+    <ul className="grid grid-cols-6">
       {items.map((it) => {
         const active = it.href === "/" ? path === "/" : path.startsWith(it.href);
         return (
@@ -24,7 +35,7 @@ export function NavLinks() {
             <Link
               href={it.href}
               aria-current={active ? "page" : undefined}
-              className={`flex h-14 flex-col items-center justify-center gap-0.5 rounded-full text-[13px] font-medium ${
+              className={`flex h-14 flex-col items-center justify-center gap-0.5 rounded-full text-[11px] font-medium min-[360px]:text-[12px] min-[375px]:text-[13px] ${
                 active ? "bg-gold-soft text-ink" : "text-ivory/80"
               }`}
             >
