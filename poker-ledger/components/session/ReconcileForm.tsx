@@ -48,7 +48,8 @@ export function ReconcileForm({
   }, [rows, method, single]);
   const D = preview?.discrepancy ?? rows.reduce((s, r) => s + r.cashOut, 0) - totalIn;
   const over = exceedsSoftLimit(D, totalIn);
-  const needsPin = over && !isAdmin;
+  // Acima do limite só o admin do grupo pode confirmar (o servidor volta a verificar).
+  const needsAdmin = over && !isAdmin;
   const singleGone = method === "SINGLE_PLAYER" && !rows.some((r) => r.id === single);
 
   return (
@@ -56,14 +57,12 @@ export function ReconcileForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        const pin = String(new FormData(e.currentTarget).get("pin") ?? "");
         setError(null);
         start(async () => {
           const r = await reconcileSession(sessionId, {
             method,
             singlePlayerId: method === "SINGLE_PLAYER" ? single : null,
             expectedDiscrepancy: D,
-            pin: needsPin ? pin : undefined,
           });
           if (!r.ok) return setError(r.error);
           sheet.close();
@@ -141,22 +140,8 @@ export function ReconcileForm({
           <p className="mt-1 text-ivory/90">
             Passa o limite de {formatCents(RECONCILE_SOFT_LIMIT_CENTS)} ou {RECONCILE_SOFT_LIMIT_PERCENT} % das entradas. Contem as fichas outra vez
             com calma: um erro deste tamanho costuma ser um cash-out mal escrito.
-            {needsPin ? " Para confirmar é preciso o PIN de admin." : " Estás em modo admin."}
+            {needsAdmin ? " Só o admin do grupo pode confirmar este ajuste." : " És admin do grupo, podes confirmar."}
           </p>
-          {needsPin && (
-            <label className="mt-3 block">
-              <span className="mb-1.5 block text-sm text-ivory/80">PIN de admin</span>
-              <input
-                name="pin"
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                required
-                minLength={6}
-                className="money h-11 w-full rounded-xl border border-white/20 bg-ink/40 px-3 tracking-[0.3em]"
-              />
-            </label>
-          )}
         </div>
       )}
 
@@ -175,7 +160,7 @@ export function ReconcileForm({
           {error}
         </p>
       )}
-      <button type="submit" disabled={pending || !online || !preview || stale} className={buttonClass("primary", "lg", "w-full")}>
+      <button type="submit" disabled={pending || !online || !preview || stale || needsAdmin} className={buttonClass("primary", "lg", "w-full")}>
         {pending ? "A confirmar…" : "Confirmar ajuste"}
       </button>
       {!online && <p className="text-sm text-ivory/75">{OFFLINE_HINT}</p>}

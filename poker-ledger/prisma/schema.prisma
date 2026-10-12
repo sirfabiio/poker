@@ -36,8 +36,47 @@ model Player {
   transfersIn    Transfer[]      @relation("TransferTo")
   activity       ActivityLog[]
   authSessions   AuthSession[]
+  memberships    Membership[]
+  groupsCreated  Group[]         @relation("GroupCreatedBy")
 
   @@index([createdByPlayerId])
+}
+
+/// Grupo de amigos: cada grupo só vê os seus jogadores, sessões, contas e histórico.
+model Group {
+  id                String   @id @default(cuid())
+  name              String
+  createdAt         DateTime @default(now())
+  createdByPlayerId String?
+
+  createdBy   Player?       @relation("GroupCreatedBy", fields: [createdByPlayerId], references: [id], onDelete: SetNull)
+  memberships Membership[]
+  sessions    Session[]
+  settlements Settlement[]
+  activity    ActivityLog[]
+
+  @@index([createdByPlayerId])
+}
+
+enum GroupRole {
+  ADMIN
+  MEMBER
+}
+
+/// Pertença de um jogador a um grupo. Desativar = active false (some das listas do grupo, o histórico fica).
+model Membership {
+  id        String    @id @default(cuid())
+  groupId   String
+  playerId  String
+  role      GroupRole @default(MEMBER)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  group  Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, playerId])
+  @@index([playerId])
 }
 
 /// Sessão de login (persistente). O cookie leva um token aleatório; aqui só fica o hash SHA-256 desse token.
@@ -63,6 +102,8 @@ model Session {
   createdByPlayerId String
   /// null = em aberto
   settlementId      String?
+  /// Grupo dono da sessão (null só em dados anteriores aos grupos, até à migração)
+  groupId           String?
 
   /// Diferença de contagem D = soma(cashOuts) − soma(buyIns) no momento do ajuste (null = sem ajuste)
   discrepancy          Int?
@@ -83,9 +124,11 @@ model Session {
   adjustmentPlayer Player?         @relation("SessionAdjustmentPlayer", fields: [adjustmentPlayerId], references: [id])
   reconciledBy     Player?         @relation("SessionReconciledBy", fields: [reconciledByPlayerId], references: [id])
   settlement       Settlement?     @relation(fields: [settlementId], references: [id])
+  group            Group?          @relation(fields: [groupId], references: [id])
   players          SessionPlayer[]
 
   @@index([settlementId])
+  @@index([groupId])
   @@index([createdByPlayerId])
   @@index([adjustmentPlayerId])
   @@index([reconciledByPlayerId])
@@ -131,11 +174,14 @@ model Settlement {
   id       String   @id @default(cuid())
   closedAt DateTime @default(now())
   label    String
+  groupId  String?
 
+  group     Group?     @relation(fields: [groupId], references: [id])
   sessions  Session[]
   transfers Transfer[]
 
   @@index([closedAt])
+  @@index([groupId])
 }
 
 model Transfer {
@@ -165,9 +211,13 @@ model ActivityLog {
   entityId      String
   summary       String
   createdAt     DateTime @default(now())
+  /// null = evento pessoal (criar perfil, definir PIN), fora de qualquer grupo
+  groupId       String?
 
   actor Player @relation(fields: [actorPlayerId], references: [id])
+  group Group? @relation(fields: [groupId], references: [id])
 
   @@index([actorPlayerId])
   @@index([createdAt])
+  @@index([groupId, createdAt])
 }

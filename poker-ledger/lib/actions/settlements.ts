@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
-import { requirePlayer } from "../identity";
-import { isAdmin, requireAdmin } from "../admin";
+import { requireGroupMember } from "../group";
+import { requireAdmin } from "../admin";
 import { logActivity } from "../activity";
 import { summarizeOpen } from "../ledger";
 import { computeTransfers, SettlementError } from "../settle";
@@ -17,16 +17,16 @@ import { bumpSessionVersion } from "../live/bump";
 export async function closeAccounts(_: unknown, form: FormData): Promise<ActionResult> {
   let settlementId = "";
   const r = await run(async () => {
-    const viewer = await requirePlayer();
-    await requireAdmin();
+    // Só o admin do grupo, e só as sessões deste grupo.
+    const { viewer, groupId } = await requireAdmin();
     const label = String(form.get("label") ?? "").trim().slice(0, 60) || monthLabel(new Date());
 
     settlementId = await db.$transaction(
       async (tx) => {
         // Bloqueia as sessões em aberto para nenhuma ser editada a meio do fecho.
-        await tx.$queryRaw`SELECT "id" FROM "Session" WHERE "settlementId" IS NULL FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "Session" WHERE "settlementId" IS NULL AND "groupId" = ${groupId} FOR UPDATE`;
         const sessions = await tx.session.findMany({
-          where: { settlementId: null },
+          where: { settlementId: null, groupId },
           select: {
             id: true,
             date: true,
@@ -66,13 +66,14 @@ export async function closeAccounts(_: unknown, form: FormData): Promise<ActionR
         }
 
         const st = await tx.settlement.create({
-          data: { label, transfers: { create: plan } },
+          data: { label, groupId, transfers: { create: plan } },
           select: { id: true },
         });
         await tx.session.updateMany({ where: { id: { in: summary.validIds } }, data: { settlementId: st.id } });
         await bumpSessionVersion(tx, { sessionId: summary.validIds, actorPlayerId: viewer.id, type: "session_settled" });
         await logActivity(tx, {
           actorPlayerId: viewer.id,
+          groupId,
           action: "settlement.close",
           entityType: "settlement",
           entityId: st.id,
@@ -94,14 +95,15 @@ export async function closeAccounts(_: unknown, form: FormData): Promise<ActionR
 /** Marcar transferência como paga (ou desfazer). Pagador, recebedor ou admin. */
 export async function setTransferPaid(transferId: string, paid: boolean): Promise<ActionResult> {
   const r = await run(async () => {
-    const viewer = await requirePlayer();
-    const t = await db.transfer.findUnique({
-      where: { id: transferId },
+    const { viewer, groupId, role } = await requireGroupMember();
+    // Só transferências de fechos deste grupo (de outro grupo → "não encontrada").
+    const t = await db.transfer.findFirst({
+      where: { id: transferId, settlement: { groupId } },
       select: { fromPlayerId: true, toPlayerId: true, amount: true, from: { select: { name: true } }, to: { select: { name: true } } },
     });
     if (!t) throw new UserError("Transferência não encontrada.");
     const involved = t.fromPlayerId === viewer.id || t.toPlayerId === viewer.id;
-    if (!involved && !(await isAdmin())) {
+    if (!involved && role !== "ADMIN") {
       throw new UserError("Só quem paga, quem recebe ou o admin pode marcar esta transferência.", "forbidden");
     }
     await db.$transaction(async (tx) => {
@@ -111,6 +113,7 @@ export async function setTransferPaid(transferId: string, paid: boolean): Promis
       });
       await logActivity(tx, {
         actorPlayerId: viewer.id,
+        groupId,
         action: paid ? "transfer.paid" : "transfer.unpaid",
         entityType: "transfer",
         entityId: transferId,

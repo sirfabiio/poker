@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireViewerPage } from "@/lib/identity";
+import { requireGroupPage } from "@/lib/group";
 import { getActivePlayers, getSessionRows } from "@/lib/queries";
 import { todayInput } from "@/lib/format";
 import { DEFAULT_BUY_IN_CENTS } from "@/lib/config";
@@ -13,8 +13,8 @@ import { NewSessionForm } from "@/components/session/NewSessionForm";
 export const metadata: Metadata = { title: "Sessões" };
 
 export default async function Sessions() {
-  await requireViewerPage();
-  const [rows, players] = await Promise.all([getSessionRows(), getActivePlayers()]);
+  const { groupId } = await requireGroupPage();
+  const [rows, players] = await Promise.all([getSessionRows(groupId), getActivePlayers(groupId)]);
   const open = rows.filter((r) => !r.settlementId);
   const closed = rows.filter((r) => r.settlementId);
 

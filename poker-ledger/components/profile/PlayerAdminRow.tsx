@@ -5,9 +5,21 @@ import { renamePlayer, setPlayerActive } from "@/lib/actions/players";
 import { Chip } from "@/components/ui/Chip";
 import { buttonClass } from "@/components/ui/Button";
 import { useOnline } from "@/lib/use-online";
+import { AdminPinForm } from "./AdminPinForm";
 
-export function PlayerAdminRow({ p }: { p: { id: string; name: string; avatarColor: string; active: boolean } }) {
-  const [editing, setEditing] = useState(false);
+type Member = {
+  id: string;
+  name: string;
+  avatarColor: string;
+  active: boolean;
+  role: "ADMIN" | "MEMBER";
+  hasPin: boolean;
+  otherGroups: number;
+};
+
+/** Linha de membro na gestão do grupo (só admin; o servidor volta a validar tudo). */
+export function PlayerAdminRow({ p, isMe }: { p: Member; isMe: boolean }) {
+  const [open, setOpen] = useState<"rename" | "pin" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const online = useOnline();
@@ -16,33 +28,47 @@ export function PlayerAdminRow({ p }: { p: { id: string; name: string; avatarCol
     <li className="py-3">
       <div className="flex items-center gap-3">
         <Chip name={p.name} color={p.avatarColor} size="sm" />
-        <span className={`min-w-0 flex-1 truncate ${p.active ? "" : "text-ivory/60 line-through"}`}>{p.name}</span>
-        <button type="button" disabled={!online} onClick={() => setEditing((v) => !v)} className={buttonClass("secondary", "sm")}>
+        <span className="min-w-0 flex-1">
+          <span className={`block truncate ${p.active ? "" : "text-ivory/60 line-through"}`}>{p.name}</span>
+          <span className="block text-[13px] text-ivory/75">
+            {p.role === "ADMIN" ? "Admin" : "Membro"}
+            {!p.hasPin && " · ainda sem PIN"}
+            {p.otherGroups > 0 && ` · também noutro${p.otherGroups > 1 ? "s" : ""} grupo${p.otherGroups > 1 ? "s" : ""}`}
+          </span>
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2 pl-11">
+        <button type="button" disabled={!online} onClick={() => setOpen((v) => (v === "rename" ? null : "rename"))} className={buttonClass("secondary", "sm")}>
           Renomear
         </button>
-        <button
-          type="button"
-          disabled={pending || !online}
-          onClick={() =>
-            start(async () => {
-              const r = await setPlayerActive(p.id, !p.active);
-              setError(r.ok ? null : r.error);
-            })
-          }
-          className={buttonClass(p.active ? "danger" : "secondary", "sm")}
-        >
-          {p.active ? "Desativar" : "Reativar"}
+        <button type="button" disabled={!online} onClick={() => setOpen((v) => (v === "pin" ? null : "pin"))} className={buttonClass("secondary", "sm")}>
+          Definir PIN
         </button>
+        {!isMe && (
+          <button
+            type="button"
+            disabled={pending || !online}
+            onClick={() =>
+              start(async () => {
+                const r = await setPlayerActive(p.id, !p.active);
+                setError(r.ok ? null : r.error);
+              })
+            }
+            className={buttonClass(p.active ? "danger" : "secondary", "sm")}
+          >
+            {p.active ? "Desativar" : "Reativar"}
+          </button>
+        )}
       </div>
-      {editing && (
+      {open === "rename" && (
         <form
-          className="mt-2 flex gap-2"
+          className="mt-2 flex gap-2 pl-11"
           onSubmit={(e) => {
             e.preventDefault();
             const name = String(new FormData(e.currentTarget).get("name") ?? "");
             start(async () => {
               const r = await renamePlayer(p.id, name);
-              if (r.ok) setEditing(false);
+              if (r.ok) setOpen(null);
               setError(r.ok ? null : r.error);
             });
           }}
@@ -56,8 +82,13 @@ export function PlayerAdminRow({ p }: { p: { id: string; name: string; avatarCol
           </button>
         </form>
       )}
+      {open === "pin" && (
+        <div className="pl-11">
+          <AdminPinForm playerId={p.id} name={p.name} onDone={() => setOpen(null)} />
+        </div>
+      )}
       {error && (
-        <p role="alert" className="mt-1 text-sm text-loss-soft">
+        <p role="alert" className="mt-1 pl-11 text-sm text-loss-soft">
           {error}
         </p>
       )}

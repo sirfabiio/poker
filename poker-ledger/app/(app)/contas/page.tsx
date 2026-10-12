@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireViewerPage } from "@/lib/identity";
-import { isAdmin } from "@/lib/admin";
+import { requireGroupPage } from "@/lib/group";
 import { getOpenState, getSettlements } from "@/lib/queries";
 import { formatCents } from "@/lib/money";
 import { formatDateTime, formatDay, monthLabel } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
 import { Money } from "@/components/ui/Money";
 import { SectionTitle } from "@/components/SectionTitle";
@@ -16,8 +14,9 @@ import { CloseAccountsForm } from "@/components/settle/CloseAccountsForm";
 export const metadata: Metadata = { title: "Contas" };
 
 export default async function Accounts() {
-  await requireViewerPage();
-  const [open, settlements, admin] = await Promise.all([getOpenState(), getSettlements(), isAdmin()]);
+  const { groupId, role } = await requireGroupPage();
+  const admin = role === "ADMIN";
+  const [open, settlements] = await Promise.all([getOpenState(groupId), getSettlements(groupId)]);
   const valid = open.sessions.length - open.invalid.length;
   const blocked = open.invalid.length > 0;
   const name = (id: string) => open.players.get(id)?.name ?? "?";
@@ -80,9 +79,9 @@ export default async function Accounts() {
                   <CloseAccountsForm defaultLabel={monthLabel(new Date())} sessions={open.sessions.length} transfers={open.preview.length} />
                 </Sheet>
               ) : (
-                <Button href="/admin" variant="secondary" className="w-full">
-                  Fechar contas (precisa do PIN de admin)
-                </Button>
+                <p className="rounded-2xl bg-ink/40 px-4 py-3 text-center text-sm text-ivory/85">
+                  Só o admin do grupo pode fechar as contas.
+                </p>
               )}
             </div>
           </>

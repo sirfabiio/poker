@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireViewerPage } from "@/lib/identity";
+import { requireGroupPage } from "@/lib/group";
 import { getActivityPage } from "@/lib/queries";
 import { formatDateTime } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
@@ -10,10 +10,10 @@ import { EmptyState } from "@/components/EmptyState";
 export const metadata: Metadata = { title: "Atividade" };
 
 export default async function Activity({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
-  await requireViewerPage();
+  const { groupId } = await requireGroupPage();
   const sp = await searchParams;
   const page = Math.max(1, Math.floor(Number(sp.p) || 1));
-  const { rows, hasNext } = await getActivityPage(page);
+  const { rows, hasNext } = await getActivityPage(groupId, page);
 
   return (
     <>

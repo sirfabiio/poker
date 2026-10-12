@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireViewerPage } from "@/lib/identity";
-import { isAdmin } from "@/lib/admin";
+import { requireGroupPage } from "@/lib/group";
 import { getActivePlayers, getSessionDetail } from "@/lib/queries";
 import { formatDay, toDateInput } from "@/lib/format";
 import { Sheet } from "@/components/ui/Sheet";
@@ -15,9 +14,10 @@ import { DeleteSessionForm } from "@/components/session/DeleteSessionForm";
 export const metadata: Metadata = { title: "Sessão" };
 
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
-  const viewer = await requireViewerPage();
+  const { viewer, groupId, role } = await requireGroupPage();
+  const admin = role === "ADMIN";
   const { id } = await params;
-  const [s, active, admin] = await Promise.all([getSessionDetail(id), getActivePlayers(), isAdmin()]);
+  const [s, active] = await Promise.all([getSessionDetail(groupId, id), getActivePlayers(groupId)]);
   if (!s) notFound();
   const editable = !s.settlement;
   const inSession = new Set(s.players.map((p) => p.playerId));

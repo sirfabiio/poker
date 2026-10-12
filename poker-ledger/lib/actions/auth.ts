@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
 import { endSession, startSession } from "../identity";
-import { endAdminSession } from "../admin";
+import { clearGroupCookie } from "../group";
 import { createPlayer, validateName, type PlayerSummary } from "../players";
 import { prismaPlayerStore } from "../players-db";
 import { logActivity } from "../activity";
@@ -135,6 +135,6 @@ export async function signUp(_: unknown, form: FormData): Promise<SignUpResult> 
 /** Terminar sessão neste dispositivo. */
 export async function logout() {
   await endSession();
-  await endAdminSession();
+  await clearGroupCookie();
   redirect("/quem-es");
 }

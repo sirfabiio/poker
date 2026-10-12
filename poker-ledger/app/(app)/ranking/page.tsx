@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireViewerPage } from "@/lib/identity";
+import { requireGroupPage } from "@/lib/group";
 import { getStatsSessions } from "@/lib/queries";
 import { computeStats, periodRange, PERIOD_LABELS, shareText, sortRows, SORT_KEYS, type PeriodKey, type SortKey } from "@/lib/stats";
 import { formatDay } from "@/lib/format";
@@ -21,12 +21,12 @@ const PERIODS = Object.keys(PERIOD_LABELS) as PeriodKey[];
 type Q = { periodo?: string; ordem?: string; linhas?: string };
 
 export default async function Ranking({ searchParams }: { searchParams: Promise<Q> }) {
-  await requireViewerPage();
+  const { groupId } = await requireGroupPage();
   const sp = await searchParams;
   const period: PeriodKey = PERIODS.includes(sp.periodo as PeriodKey) ? (sp.periodo as PeriodKey) : "sempre";
   const sort: SortKey = SORT_KEYS.includes(sp.ordem as SortKey) ? (sp.ordem as SortKey) : "lucro";
   const now = new Date();
-  const stats = computeStats(await getStatsSessions(), { ...periodRange(period, now), now });
+  const stats = computeStats(await getStatsSessions(groupId), { ...periodRange(period, now), now });
 
   const known = new Set(stats.evolution.map((s) => s.playerId));
   const asked = sp.linhas?.split(",").filter((id) => known.has(id)) ?? null;

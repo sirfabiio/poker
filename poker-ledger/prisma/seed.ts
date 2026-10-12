@@ -74,6 +74,14 @@ async function main() {
   }
 
   const rui = ids.get("Rui")!;
+  // Grupo de exemplo com todos; o Rui é o admin.
+  const group = await db.group.create({
+    data: {
+      name: "Exemplo",
+      createdByPlayerId: rui,
+      memberships: { create: [...ids.values()].map((playerId) => ({ playerId, role: playerId === rui ? "ADMIN" : "MEMBER" })) },
+    },
+  });
   for (const s of SESSIONS) {
     const session = await db.session.create({
       data: {
@@ -81,6 +89,7 @@ async function main() {
         notes: s.notes,
         defaultBuyIn: 2000,
         createdByPlayerId: rui,
+        groupId: group.id,
         ...(s.adjusted
           ? { discrepancy: s.adjusted, adjustmentMethod: "EQUAL" as const, reconciledAt: new Date(), reconciledByPlayerId: rui }
           : {}),
@@ -97,6 +106,7 @@ async function main() {
     await db.activityLog.create({
       data: {
         actorPlayerId: rui,
+        groupId: group.id,
         action: "session.create",
         entityType: "session",
         entityId: session.id,

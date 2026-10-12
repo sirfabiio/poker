@@ -1,4 +1,5 @@
-// Leituras por página: só os campos necessários, sem N+1.
+// Leituras por página: só os campos necessários, sem N+1. TODAS filtradas pelo grupo ativo (groupId vem
+// sempre de getGroupContext/requireGroupPage, validado contra a pertença no servidor).
 import { createHash } from "node:crypto";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
@@ -18,11 +19,21 @@ export type OpenState = {
   preview: PlannedTransfer[];
 };
 
-/** Saldos em aberto de todos: UMA função, duas queries em paralelo, agregação em memória. */
-export const getOpenState = cache(async (): Promise<OpenState> => {
+/** Jogadores do grupo (membros, incluindo desativados no grupo), com o estado da pertença. */
+async function groupPlayers(groupId: string): Promise<PlayerLite[]> {
+  const rows = await db.membership.findMany({
+    where: { groupId },
+    orderBy: { player: { name: "asc" } },
+    select: { active: true, player: { select: { id: true, name: true, avatarColor: true } } },
+  });
+  return rows.map((m) => ({ ...m.player, active: m.active }));
+}
+
+/** Saldos em aberto do grupo: UMA função, duas queries em paralelo, agregação em memória. */
+export const getOpenState = cache(async (groupId: string): Promise<OpenState> => {
   const [sessions, players] = await Promise.all([
     db.session.findMany({
-      where: { settlementId: null },
+      where: { groupId, settlementId: null },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       select: {
         id: true,
@@ -32,10 +43,7 @@ export const getOpenState = cache(async (): Promise<OpenState> => {
         players: { select: { playerId: true, cashOut: true, adjustment: true, buyIns: { select: { amount: true } } } },
       },
     }),
-    db.player.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, avatarColor: true, active: true },
-    }),
+    groupPlayers(groupId),
   ]);
 
   const inputs = sessions.map((s) => ({
@@ -79,8 +87,9 @@ export const getOpenState = cache(async (): Promise<OpenState> => {
   };
 });
 
-export function getSettlements(take?: number) {
+export function getSettlements(groupId: string, take?: number) {
   return db.settlement.findMany({
+    where: { groupId },
     orderBy: { closedAt: "desc" },
     take,
     select: {
@@ -108,7 +117,7 @@ export type SessionRow = {
 };
 
 /** Lista de sessões com totais numa única query. */
-export function getSessionRows() {
+export function getSessionRows(groupId: string) {
   return db.$queryRaw<SessionRow[]>`
     SELECT s."id", s."date", s."settlementId", st."label",
       (s."reconciledAt" IS NOT NULL) AS "reconciled",
@@ -129,20 +138,24 @@ export function getSessionRows() {
       FROM "SessionPlayer" x JOIN "BuyIn" y ON y."sessionPlayerId" = x."id"
       GROUP BY x."sessionId"
     ) b ON b."sessionId" = s."id"
+    WHERE s."groupId" = ${groupId}
     ORDER BY (s."settlementId" IS NULL) DESC, s."date" DESC, s."createdAt" DESC`;
 }
 
-export function getActivePlayers() {
-  return db.player.findMany({
-    where: { active: true },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, avatarColor: true },
+/** Membros ativos do grupo (para escolher quem joga). */
+export async function getActivePlayers(groupId: string) {
+  const rows = await db.membership.findMany({
+    where: { groupId, active: true },
+    orderBy: { player: { name: "asc" } },
+    select: { player: { select: { id: true, name: true, avatarColor: true } } },
   });
+  return rows.map((m) => m.player);
 }
 
-export function getSessionDetail(id: string) {
-  return db.session.findUnique({
-    where: { id },
+/** Sessão do grupo (de outro grupo devolve null → 404). */
+export function getSessionDetail(groupId: string, id: string) {
+  return db.session.findFirst({
+    where: { id, groupId },
     select: {
       id: true,
       date: true,
@@ -171,10 +184,10 @@ export function getSessionDetail(id: string) {
   });
 }
 
-export function getSettlementDetail(id: string) {
+export function getSettlementDetail(groupId: string, id: string) {
   const party = { select: { id: true, name: true, avatarColor: true } } as const;
-  return db.settlement.findUnique({
-    where: { id },
+  return db.settlement.findFirst({
+    where: { id, groupId },
     select: {
       id: true,
       label: true,
@@ -195,11 +208,11 @@ export function getSettlementDetail(id: string) {
   });
 }
 
-/** Perfil: histórico por sessão e transferências pendentes. */
-export async function getMyHistory(playerId: string) {
+/** Perfil: histórico por sessão e transferências pendentes (só do grupo ativo). */
+export async function getMyHistory(groupId: string, playerId: string) {
   const [rows, pending] = await Promise.all([
     db.sessionPlayer.findMany({
-      where: { playerId },
+      where: { playerId, session: { groupId } },
       orderBy: { session: { date: "desc" } },
       take: 60,
       select: {
@@ -210,7 +223,7 @@ export async function getMyHistory(playerId: string) {
       },
     }),
     db.transfer.findMany({
-      where: { paid: false, OR: [{ fromPlayerId: playerId }, { toPlayerId: playerId }] },
+      where: { paid: false, settlement: { groupId }, OR: [{ fromPlayerId: playerId }, { toPlayerId: playerId }] },
       orderBy: { settlement: { closedAt: "desc" } },
       select: {
         id: true,
@@ -237,8 +250,9 @@ export async function getMyHistory(playerId: string) {
 
 export const ACTIVITY_PAGE_SIZE = 20;
 
-export async function getActivityPage(page: number) {
+export async function getActivityPage(groupId: string, page: number) {
   const rows = await db.activityLog.findMany({
+    where: { groupId },
     orderBy: { createdAt: "desc" },
     skip: (page - 1) * ACTIVITY_PAGE_SIZE,
     take: ACTIVITY_PAGE_SIZE + 1,
@@ -253,11 +267,34 @@ export async function getActivityPage(page: number) {
   return { rows: rows.slice(0, ACTIVITY_PAGE_SIZE), hasNext: rows.length > ACTIVITY_PAGE_SIZE };
 }
 
-export function getAllPlayers() {
-  return db.player.findMany({
-    orderBy: [{ active: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, avatarColor: true, active: true },
+/** Membros do grupo para a gestão (admin): pertença, papel e se a conta está só neste grupo. */
+export async function getGroupMembers(groupId: string) {
+  const rows = await db.membership.findMany({
+    where: { groupId },
+    orderBy: [{ active: "desc" }, { player: { name: "asc" } }],
+    select: {
+      role: true,
+      active: true,
+      player: {
+        select: {
+          id: true,
+          name: true,
+          avatarColor: true,
+          pinHash: true,
+          memberships: { select: { groupId: true } },
+        },
+      },
+    },
   });
+  return rows.map((m) => ({
+    id: m.player.id,
+    name: m.player.name,
+    avatarColor: m.player.avatarColor,
+    role: m.role,
+    active: m.active,
+    hasPin: m.player.pinHash !== null,
+    otherGroups: m.player.memberships.filter((x) => x.groupId !== groupId).length,
+  }));
 }
 
 
@@ -281,29 +318,32 @@ type StatsRow = {
  * O resultado fica em cache (datas como texto, porque a cache serializa em JSON) até revalidateTag(STATS_TAG).
  */
 const loadStatsRows = unstable_cache(
-  async () => {
+  // groupId faz parte da chave da cache (os argumentos entram na chave do unstable_cache).
+  async (groupId: string) => {
     const rows = await db.$queryRaw<StatsRow[]>`
       SELECT s."id" AS "sessionId", s."date", (s."reconciledAt" IS NOT NULL) AS "reconciled",
-        sp."playerId", p."name", p."avatarColor", p."active", sp."cashOut", sp."adjustment",
+        sp."playerId", p."name", p."avatarColor", COALESCE(m."active", false) AS "active", sp."cashOut", sp."adjustment",
         COALESCE(SUM(b."amount"), 0)::int AS "buyInTotal", COUNT(b."id")::int AS "buyInCount"
       FROM "Session" s
       JOIN "SessionPlayer" sp ON sp."sessionId" = s."id"
       JOIN "Player" p ON p."id" = sp."playerId"
+      LEFT JOIN "Membership" m ON m."groupId" = s."groupId" AND m."playerId" = sp."playerId"
       LEFT JOIN "BuyIn" b ON b."sessionPlayerId" = sp."id"
-      GROUP BY s."id", sp."id", p."id"
+      WHERE s."groupId" = ${groupId}
+      GROUP BY s."id", sp."id", p."id", m."active"
       ORDER BY s."date", s."createdAt", s."id"`;
     return rows.map((r) => ({ ...r, date: r.date.toISOString() }));
   },
   // A chave inclui uma impressão da base de dados (hash, nunca a URL): deployments ligados a bases
   // diferentes (ex.: preview com a branch dev) nunca partilham entradas da cache.
-  ["stats-rows-v1", createHash("sha256").update(process.env.DATABASE_URL ?? "").digest("hex").slice(0, 16)],
+  ["stats-rows-v2", createHash("sha256").update(process.env.DATABASE_URL ?? "").digest("hex").slice(0, 16)],
   // A tag é invalidada em todas as escritas da app; os 10 min são só uma rede de segurança para
   // alterações feitas fora da app (ex.: apagar dados de teste no SQL Editor do Neon).
   { tags: [STATS_TAG], revalidate: STATS_MAX_AGE_SECONDS },
 );
 
-export const getStatsSessions = cache(async (): Promise<StatsSessionInput[]> => {
-  const rows = await loadStatsRows();
+export const getStatsSessions = cache(async (groupId: string): Promise<StatsSessionInput[]> => {
+  const rows = await loadStatsRows(groupId);
   const out: StatsSessionInput[] = [];
   const byId = new Map<string, StatsSessionInput & { players: StatsSessionInput["players"][number][] }>();
   for (const r of rows) {

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireViewerPage } from "@/lib/identity";
+import { requireGroupPage } from "@/lib/group";
 import { getOpenState, getSettlements } from "@/lib/queries";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
@@ -11,8 +11,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { formatDateTime } from "@/lib/format";
 
 export default async function Home() {
-  const viewer = await requireViewerPage();
-  const [open, settlements] = await Promise.all([getOpenState(), getSettlements(5)]);
+  const { viewer, groupId, groupName } = await requireGroupPage();
+  const [open, settlements] = await Promise.all([getOpenState(groupId), getSettlements(groupId, 5)]);
   const mine = open.ranking.find((r) => r.id === viewer.id)?.balance ?? 0;
   const counted = open.sessions.length - open.invalid.length;
   const withResults = open.ranking.filter((r) => r.balance !== 0);
@@ -21,7 +21,12 @@ export default async function Home() {
     <>
       <header className="mb-5 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm text-ivory/75">Olá,</p>
+          <p className="text-sm text-ivory/75">
+            Olá ·{" "}
+            <Link href="/grupos" className="font-semibold text-gold-soft underline-offset-4 hover:underline">
+              {groupName}
+            </Link>
+          </p>
           <h1 className="truncate font-display text-[24px] font-semibold">{viewer.name}</h1>
         </div>
         <Link href="/eu" aria-label={`${viewer.name}: o meu perfil`}>

@@ -15,8 +15,10 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/db", () => ({
   db: {
-    session: { findUnique: (...a: unknown[]) => findUnique(...a) },
+    session: { findFirst: (...a: unknown[]) => findUnique(...a) },
     authSession: { findUnique: (a: { where: { tokenHash: string } }) => authFind(a) },
+    // O Rui é membro só do grupo "g1".
+    membership: { findMany: async () => [{ role: "MEMBER", group: { id: "g1", name: "2022" } }] },
   },
 }));
 
@@ -67,8 +69,17 @@ describe("GET /api/sessions/[id]/version", () => {
     expect(await r.json()).toEqual({ version: 7, lastActorPlayerId: "rui", lastChangeType: "rebuy_added", settled: true });
     expect(findUnique).toHaveBeenCalledTimes(1);
     expect(findUnique).toHaveBeenCalledWith({
-      where: { id: "s1" },
+      where: { id: "s1", groupId: "g1" },
       select: { version: true, lastActorPlayerId: true, lastChangeType: true, settlementId: true },
     });
+  });
+
+  it("sessão de outro grupo → 404 (a pesquisa é sempre limitada ao grupo do pedido)", async () => {
+    cookie.value = VALID;
+    findUnique.mockImplementation(async ({ where }: { where: { id: string; groupId: string } }) =>
+      where.groupId === "g2" ? { version: 1, lastActorPlayerId: null, lastChangeType: null, settlementId: null } : null,
+    );
+    const r = await call("sessao-do-grupo-g2");
+    expect(r.status).toBe(404);
   });
 });

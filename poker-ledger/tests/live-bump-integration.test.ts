@@ -62,20 +62,25 @@ describe.skipIf(!enabled)("Session.version sobe na mesma transação de cada esc
 
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_URL;
-    process.env.ADMIN_PIN = "135790";
     vi.spyOn(console, "error").mockImplementation(() => {});
     ({ db } = await import("@/lib/db"));
     A = await import("@/lib/actions/sessions");
     S = await import("@/lib/actions/settlements");
     ({ bumpSessionVersion: bump } = await import("@/lib/live/bump"));
-    const { makeAdminToken } = await import("@/lib/admin");
+    const { newSessionToken } = await import("@/lib/pin");
     await db.$executeRawUnsafe(
-      `TRUNCATE "Transfer", "Settlement", "ActivityLog", "BuyIn", "SessionPlayer", "Session", "Player" CASCADE`,
+      `TRUNCATE "Transfer", "Settlement", "ActivityLog", "BuyIn", "SessionPlayer", "Session", "AuthSession", "Membership", "Group", "Player" CASCADE`,
     );
     const mk = (name: string) => db.player.create({ data: { name, nameKey: name.toLowerCase(), avatarColor: "#B3202A" } });
     [ana, bea, cai] = (await Promise.all([mk("Ana"), mk("Bea"), mk("Cai")])).map((p) => p.id);
-    jar.set("pl_player", ana);
-    jar.set("pl_admin", makeAdminToken("135790"));
+    // Ana com sessão de login e admin de um grupo onde estão os três.
+    const g = await db.group.create({
+      data: { name: "Teste", memberships: { create: [{ playerId: ana, role: "ADMIN" }, { playerId: bea }, { playerId: cai }] } },
+    });
+    const { token, tokenHash } = newSessionToken();
+    await db.authSession.create({ data: { tokenHash, playerId: ana, expiresAt: new Date(Date.now() + 3_600_000) } });
+    jar.set("pl_session", token);
+    jar.set("pl_group", g.id);
     for (const notes of ["s1", "s2"]) {
       const r = await A.createSession({ date: "2026-10-01", defaultBuyIn: 2000, playerIds: [ana, bea], notes });
       expect(r.ok).toBe(true);

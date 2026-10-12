@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireViewerPage } from "@/lib/identity";
-import { isAdmin } from "@/lib/admin";
+import { requireGroupPage } from "@/lib/group";
 import { getSettlementDetail } from "@/lib/queries";
 import { formatDateTime } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
@@ -12,9 +11,10 @@ import { TicketLive } from "@/components/settle/TicketLive";
 export const metadata: Metadata = { title: "Fecho" };
 
 export default async function SettlementPage({ params }: { params: Promise<{ id: string }> }) {
-  const viewer = await requireViewerPage();
+  const { viewer, groupId, role } = await requireGroupPage();
+  const admin = role === "ADMIN";
   const { id } = await params;
-  const [st, admin] = await Promise.all([getSettlementDetail(id), isAdmin()]);
+  const st = await getSettlementDetail(groupId, id);
   if (!st) notFound();
   const total = st.transfers.length;
   const paid = st.transfers.filter((t) => t.paid).length;

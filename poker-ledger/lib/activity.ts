@@ -6,6 +6,8 @@ export type ActivityInput = {
   entityType: "player" | "session" | "buyin" | "sessionPlayer" | "settlement" | "transfer";
   entityId: string;
   summary: string;
+  /** Grupo onde aconteceu (null = evento pessoal, ex.: criar perfil ou definir PIN). */
+  groupId?: string | null;
 };
 
 /** Regista quem fez o quê. Chamar dentro da mesma transação da escrita. */

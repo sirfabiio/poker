@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireViewerPage } from "@/lib/identity";
-import { isAdmin } from "@/lib/admin";
+import { requireGroupPage } from "@/lib/group";
 import { getMyHistory, getOpenState, getStatsSessions } from "@/lib/queries";
 import { computeStats } from "@/lib/stats";
 import { logout } from "@/lib/actions/auth";
@@ -14,12 +13,14 @@ import { SuitDivider } from "@/components/ui/SuitDivider";
 import { SectionTitle } from "@/components/SectionTitle";
 import { EmptyState } from "@/components/EmptyState";
 import { ProfileForm } from "@/components/profile/ProfileForm";
+import { ChangePinForm } from "@/components/profile/ChangePinForm";
 
 export const metadata: Metadata = { title: "Eu" };
 
 export default async function Me() {
-  const viewer = await requireViewerPage();
-  const [open, history, admin, statsSessions] = await Promise.all([getOpenState(), getMyHistory(viewer.id), isAdmin(), getStatsSessions()]);
+  const { viewer, groupId, groupName, role } = await requireGroupPage();
+  const admin = role === "ADMIN";
+  const [open, history, statsSessions] = await Promise.all([getOpenState(groupId), getMyHistory(groupId, viewer.id), getStatsSessions(groupId)]);
   const balance = open.ranking.find((r) => r.id === viewer.id)?.balance ?? 0;
   const stats = computeStats(statsSessions);
   const me = stats.rows.find((r) => r.playerId === viewer.id);
@@ -31,7 +32,7 @@ export default async function Me() {
         <Chip name={viewer.name} color={viewer.avatarColor} size="xl" />
         <div className="min-w-0">
           <h1 className="truncate font-display text-[24px] font-semibold">{viewer.name}</h1>
-          {admin && <p className="text-[13px] font-semibold text-gold-soft">Modo admin ativo</p>}
+          {admin && <p className="text-[13px] font-semibold text-gold-soft">Admin de “{groupName}”</p>}
         </div>
       </header>
 
@@ -117,6 +118,11 @@ export default async function Me() {
         <ProfileForm name={viewer.name} avatarColor={viewer.avatarColor} ibanOrMbway={viewer.ibanOrMbway ?? ""} />
       </Card>
 
+      <SectionTitle>Trocar o meu PIN</SectionTitle>
+      <Card>
+        <ChangePinForm />
+      </Card>
+
       <SectionTitle>Histórico por sessão</SectionTitle>
       {history.sessions.length === 0 ? (
         <Card>
@@ -150,9 +156,14 @@ export default async function Me() {
         <Button href="/atividade" variant="secondary">
           Histórico de atividade
         </Button>
-        <Button href="/admin" variant="secondary">
-          {admin ? "Admin: jogadores" : "Entrar como admin"}
+        <Button href="/grupos" variant="secondary">
+          Grupos (atual: {groupName})
         </Button>
+        {admin && (
+          <Button href="/admin" variant="secondary">
+            Admin do grupo: membros
+          </Button>
+        )}
         <form action={logout}>
           <button type="submit" className={buttonClass("ghost", "md", "w-full")}>
             Terminar sessão

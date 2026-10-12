@@ -167,7 +167,7 @@ export function SessionLive({
                 cash-outs ficam como estão e cada jogador recebe uma linha de ajuste.
               </p>
               {exceedsSoftLimit(totals.diff, totals.totalIn) && (
-                <p className="mt-2 text-sm font-semibold text-loss-soft">⚠ Diferença grande: confirmar o ajuste exige o PIN de admin.</p>
+                <p className="mt-2 text-sm font-semibold text-loss-soft">⚠ Diferença grande: só o admin do grupo pode confirmar o ajuste.</p>
               )}
             </>
           )}
