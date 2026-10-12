@@ -81,13 +81,12 @@ Abre o `.env` num editor de texto (por exemplo o VS Code ou o Bloco de Notas) e 
 ```
 DATABASE_URL="<A_TUA_URL_POOLED_DEV>&pgbouncer=true&connect_timeout=15"
 DIRECT_URL="<A_TUA_URL_DIRETA_DEV>"
-ADMIN_PIN="<UM_PIN_COM_PELO_MENOS_6_DIGITOS>"
 ```
 
 - No fim da `DATABASE_URL` acrescenta `&pgbouncer=true&connect_timeout=15` (se a URL ainda não tiver nenhum `?`, usa `?pgbouncer=true&connect_timeout=15`). Isto avisa o Prisma de que está atrás do pooler e dá tempo ao Neon para "acordar".
-- O `ADMIN_PIN` tem de ter **só algarismos, pelo menos 6** (ex.: inventa um tu; não uses datas de nascimento).
+- Já não é preciso `ADMIN_PIN`: cada pessoa tem o seu PIN e os admins são por grupo.
 
-**Como sei que correu bem:** o ficheiro `.env` existe na pasta `poker-ledger` com as três linhas preenchidas, sem `< >`.
+**Como sei que correu bem:** o ficheiro `.env` existe na pasta `poker-ledger` com as duas linhas preenchidas, sem `< >`.
 
 ### 2.6 Criar as tabelas, pôr dados de exemplo e arrancar
 
@@ -106,7 +105,7 @@ Abre **http://localhost:3000** no browser.
 **Como sei que correu bem:**
 - `migrate dev` termina com "Your database is now in sync with your schema".
 - `seed` mostra "Seed concluído: 5 jogadores e 3 sessões."
-- `npm run dev` mostra "Ready" e, no browser, aparece **"Quem és tu?"** com Ana, Miguel, Rui, Sofia e Tiago. Escolhe um e vês o painel com o saldo.
+- `npm run dev` mostra "Ready" e, no browser, aparece o ecrã **Entrar**. Escreve um dos nomes do seed (Ana, Miguel, Rui, Sofia ou Tiago) e um PIN à tua escolha: como é o primeiro acesso, a app pede para o confirmares. Entras no grupo de exemplo "Exemplo" (o Rui é o admin) e vês o painel com o saldo.
 - Extra: http://localhost:3000/dev/ui mostra o catálogo de componentes (só existe em desenvolvimento).
 
 ---
@@ -124,7 +123,7 @@ npm test
       Tests  37 passed (37)
 ```
 
-Os testes não precisam da base de dados. Cobrem o cálculo do fecho (`lib/settle.ts`), os ajustes de diferenças de contagem (`lib/reconcile.ts`), os nomes duplicados ("rui" vs "Rui"), a validação de sessões, os valores em cêntimos, o PIN de admin e a atualização automática da página da sessão.
+Os testes não precisam da base de dados. Cobrem o cálculo do fecho (`lib/settle.ts`), os ajustes de diferenças de contagem (`lib/reconcile.ts`), os nomes duplicados ("rui" vs "Rui"), a validação de sessões, os valores em cêntimos, o PIN pessoal (hash e bloqueio), as permissões de admin do grupo e a atualização automática da página da sessão.
 
 Há um teste extra que precisa de uma base de dados **só para testes** (é apagada por completo). Prova que cada escrita sobe a versão da sessão. Só corre se a variável `TEST_DATABASE_URL` apontar para uma base de dados cujo nome termina em `_test`. Nunca uses a de produção nem a `dev`. Sem a variável, esse teste aparece como "skipped".
 
@@ -138,7 +137,7 @@ Usa dois dispositivos, ou dois navegadores diferentes (ex.: Chrome e Firefox, ou
 
 1. Abre a **mesma sessão** nos dois. Num deles, carrega em **Rebuy** num jogador. **Como sei que correu bem:** no outro, em 4 segundos ou menos, sem recarregar, o número de entradas desse jogador sobe e aparece o aviso "<nome> adicionou um rebuy".
 2. No dispositivo B, toca no campo de cash-out de um jogador e escreve um valor **sem guardar**. No dispositivo A, escreve outro valor no cash-out do mesmo jogador e carrega em **Guardar**. **Como sei que correu bem:** em B, o que escreveste continua lá, o cursor não saiu do campo, e aparece por baixo "Valor alterado por <nome>: X €" com o botão **Usar esse valor**.
-3. Com as contas da sessão certas, entra como admin num dos dispositivos e fecha as contas. **Como sei que correu bem:** no outro, em 4 segundos ou menos, aparece "Sessão fechada nas contas" e a sessão fica bloqueada ("Já não pode ser editada"), sem botões de edição.
+3. Com as contas da sessão certas, entra com o admin do grupo num dos dispositivos e fecha as contas. **Como sei que correu bem:** no outro, em 4 segundos ou menos, aparece "Sessão fechada nas contas" e a sessão fica bloqueada ("Já não pode ser editada"), sem botões de edição.
 
 Nota: enquanto houver uma página de sessão aberta e visível, a app faz um pedido pequeno à base de dados a cada 3 s (10 s se ninguém mexer durante 5 minutos). Isso mantém a base de dados Neon "acordada" e conta para as horas de computação. Fechar o separador, bloquear o ecrã ou mudar de app pára os pedidos. Confirma os limites atuais do plano grátis em https://neon.tech/pricing.
 
@@ -185,10 +184,11 @@ Guarda as duas num sítio seguro (por exemplo, um gestor de palavras-passe). **N
 
 1. Em https://vercel.com/new (ou **Add New… → Project**) clica em **Import** ao lado do repositório `poker-ledger`. Se não aparecer, clica em **Adjust GitHub App Permissions** e dá acesso ao repositório.
 2. **Framework Preset:** deve aparecer **Next.js** sozinho. Não mudes os comandos de build: o projeto já usa `npm run build`, que faz `prisma generate && prisma migrate deploy && next build`.
-3. Abre **Environment Variables** e adiciona três (Name / Value):
+3. Abre **Environment Variables** e adiciona duas (Name / Value), só para **Production**:
    - `DATABASE_URL` = a URL **pooled** de produção (passo 5)
    - `DIRECT_URL` = a URL **direta** de produção (passo 5)
-   - `ADMIN_PIN` = o PIN de produção (só algarismos, mínimo 6)
+
+   Para os deployments de **Preview** (branches que não são a principal) cria as mesmas duas variáveis com **Preview** assinalado, a apontar para uma branch de teste do Neon, **nunca** para a de produção: cada build corre as migrações na base de dados configurada.
 4. **Região:** o ficheiro `vercel.json` já fixa as funções em **Frankfurt (fra1)**, perto do Neon. Depois do deploy podes confirmar em **Settings → Functions → Function Region** (deve dizer Frankfurt, `fra1`). Se mudares a região do Neon, muda também esta.
 5. Clica em **Deploy** e espera (2–4 minutos).
 
@@ -201,10 +201,10 @@ Guarda as duas num sítio seguro (por exemplo, um gestor de palavras-passe). **N
 ## 7. Primeiro uso em produção
 
 1. No projeto da Vercel clica em **Visit** (ou abre o endereço `https://<NOME_DO_PROJETO>.vercel.app`).
-2. **Confirma que a base de dados está vazia:** deve aparecer "Quem és tu?" com a frase "Ainda não há ninguém à mesa. Sê o primeiro!" (sem a Ana, o Rui, etc. do seed).
-3. Clica **Sou novo aqui**, escreve o teu nome e **Criar perfil e entrar**.
+2. Aparece o ecrã **Entrar** (nome + PIN).
+3. Clica **Sou novo aqui**, escreve o teu nome e um PIN (4 a 8 algarismos, duas vezes) e entra. Como ainda não pertences a nenhum grupo, a app leva-te a **Grupos**: cria o teu grupo (ficas admin dele). Junta os outros em **Eu → Admin do grupo: membros**, pelo nome; cada um define o seu PIN no primeiro acesso.
 4. Faz uma sessão de teste: **Sessões → + Nova sessão** → em "+ Adicionar pessoa nova" cria uma pessoa "Teste", seleciona-te também → **Começar sessão**. Faz um **Rebuy** e preenche os **cash-outs**. Se a soma não der o total das entradas, a app mostra "Sobram/Faltam X €": recontem e, se for mesmo assim, usa **Ajustar diferença** (explicado no README, secção "Diferenças de contagem").
-5. Testa o fecho: **Contas → Fechar contas (precisa do PIN de admin)** → escreve o `ADMIN_PIN` de produção → **Ir para Contas e fechar o ciclo** → **Fechar contas** → **Confirmar e fechar contas**. Na página do fecho, carrega em **Marcar como paga**.
+5. Testa o fecho (como admin do grupo): **Contas → Fechar contas** → **Confirmar e fechar contas**. Na página do fecho, carrega em **Marcar como paga**.
 
 **Como sei que correu bem:** depois do fecho vês os talões, o progresso (ex.: "1/1 pagas") e o carimbo **PAGO**.
 
@@ -214,12 +214,12 @@ Guarda as duas num sítio seguro (por exemplo, um gestor de palavras-passe). **N
 2. Cola e executa (**Run**):
 
 ```sql
-TRUNCATE "ActivityLog", "Transfer", "Settlement", "BuyIn", "SessionPlayer", "Session", "Player" CASCADE;
+TRUNCATE "ActivityLog", "Transfer", "Settlement", "BuyIn", "SessionPlayer", "Session", "AuthSession", "Membership", "Group", "Player" CASCADE;
 ```
 
-Isto apaga **todos** os jogadores, sessões e fechos, mas mantém as tabelas e as migrações. Depois, no telemóvel/computador onde testaste, escolhe outra vez o perfil (o antigo deixou de existir, por isso a app volta a "Quem és tu?").
+Isto apaga **todos** os jogadores, sessões e fechos, mas mantém as tabelas e as migrações. A sessão iniciada no telemóvel/computador onde testaste deixa de valer e a app volta ao ecrã **Entrar**.
 
-**Como sei que correu bem:** ao abrir a app volta a aparecer "Ainda não há ninguém à mesa".
+**Como sei que correu bem:** ao abrir a app aparece **Entrar** e o teu nome antigo já não existe ("Não há ninguém com esse nome").
 
 ---
 
@@ -233,7 +233,7 @@ Isto apaga **todos** os jogadores, sessões e fechos, mas mantém as tabelas e a
 1. Abre o endereço no **Safari** (tem de ser o Safari).
 2. Toca em **Partilhar** (quadrado com seta para cima) → **Adicionar ao ecrã principal** → **Adicionar**.
 
-**Partilhar com o grupo (WhatsApp):** envia o endereço `https://<NOME_DO_PROJETO>.vercel.app` no grupo com uma mensagem como: "Abram este link, escolham o vosso nome (ou 'Sou novo aqui') e instalem a app no ecrã principal." **Nunca** envies o PIN de admin no grupo.
+**Partilhar com o grupo (WhatsApp):** envia o endereço `https://<NOME_DO_PROJETO>.vercel.app` no grupo com uma mensagem como: "Abram este link, entrem com o vosso nome e escolham um PIN só vosso (ou 'Sou novo aqui'), e instalem a app no ecrã principal." Ninguém deve partilhar o seu PIN.
 
 **Como sei que correu bem:** aparece o ícone da ficha dourada no ecrã principal e, ao abrir, a app ocupa o ecrã inteiro sem a barra do browser.
 
@@ -273,10 +273,12 @@ O endereço por omissão é `https://<NOME_DO_PROJETO>.vercel.app`. Para um ende
 
 | Problema | Causa | Solução |
 | --- | --- | --- |
-| **Build falha na Vercel com "Environment variable not found: DATABASE_URL" (ou `DIRECT_URL`)** | Falta uma variável na Vercel. | **Settings → Environment Variables**: confirma `DATABASE_URL`, `DIRECT_URL` e `ADMIN_PIN` (sem aspas a mais nem espaços), com **Production** assinalado. Depois **Deployments → ⋯ → Redeploy**. |
+| **Build falha na Vercel com "Environment variable not found: DATABASE_URL" (ou `DIRECT_URL`)** | Falta uma variável na Vercel. | **Settings → Environment Variables**: confirma `DATABASE_URL` e `DIRECT_URL` (sem aspas a mais nem espaços), com **Production** assinalado. Depois **Deployments → ⋯ → Redeploy**. |
 | **Erro de ligação à base de dados** (`P1001 Can't reach database server`, `P1000 Authentication failed`, ou o build fica parado em `migrate deploy`) | URL errada/incompleta, ou pooled e direta trocadas. | Volta a copiar as URLs no Neon (**Connect**). A `DATABASE_URL` é a que tem `-pooler`; a `DIRECT_URL` é a **sem** `-pooler`. Confirma que estás a usar a branch certa (`main` na Vercel, `dev` no `.env`). Se aparecer um erro sobre `channel_binding`, apaga `&channel_binding=require` da URL. |
 | **O primeiro carregamento é lento depois de algum tempo sem uso** | No plano grátis, o Neon suspende a base de dados após inatividade e demora uns segundos a "acordar". | É normal: espera e recarrega. O `connect_timeout=15` na `DATABASE_URL` dá tempo ao arranque. Os pedidos seguintes são rápidos. |
-| **"PIN inválido."** | O PIN escrito não é igual ao `ADMIN_PIN` configurado. | Confirma o valor em **Settings → Environment Variables** da Vercel. Se o mudares, faz **Redeploy** (as variáveis só se aplicam a novos deployments). Se aparecer "O ADMIN_PIN não está configurado no servidor", falta a variável ou tem menos de 6 algarismos. |
+| **"PIN errado. Restam N tentativas…" / "Demasiadas tentativas falhadas"** | PIN pessoal errado; à 5.ª falha seguida o perfil fica bloqueado 15 minutos. | Espera os minutos indicados. Se a pessoa se esqueceu do PIN, o admin do grupo define-lhe um novo em **Eu → Admin do grupo: membros → Definir PIN**. |
+| **"Esta ação é só para o admin do grupo."** | Fechar contas, apagar sessões, gerir membros e confirmar ajustes grandes são do admin do grupo atual. | Pede ao admin do grupo, ou confirma em **Grupos** que estás no grupo certo. |
+| **Build falha com "Migração grupo 2022: esperava exatamente 1 jogador \"Freitas\"…"** | A migração de dados não encontrou o Freitas (nome mudado ou inexistente). Nenhum dado foi alterado e a versão anterior continua no ar. | Não tentes outra vez sem rever: falta decidir quem fica admin. Depois de corrigido, a migração falhada tem de ser marcada com `npx prisma migrate resolve --rolled-back 20261012120000_grupo_2022_dados` antes do próximo deploy. |
 | **A app não aparece como instalável** | A instalação exige HTTPS, o manifest e o service worker. | Usa o endereço `https://…vercel.app` (o `localhost` com `npm run dev` não tem service worker). No Chrome do computador: **F12 → Application → Manifest** mostra os erros. No iPhone só funciona pelo **Safari** (Partilhar → Adicionar ao ecrã principal). |
 | **Uma alteração publicada não aparece** | O service worker serve primeiro a versão em cache e só depois atualiza. | Fecha a app por completo e volta a abrir (às vezes 2 vezes). No browser do computador: **Ctrl + Shift + R**. Para forçar: Chrome → **F12 → Application → Service workers → Unregister** e depois **Storage → Clear site data**; no Android: Definições → Apps → Chrome → Armazenamento → gerir dados do site; no iPhone: Definições → Safari → Avançadas → Dados de sites → apagar o do teu endereço. |
 
