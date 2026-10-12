@@ -25,7 +25,7 @@ const refresh = () => {
 
 /**
  * "+ Adicionar pessoa nova" (qualquer membro): cria o jogador e torna-o membro do grupo ativo.
- * Se o nome já existir: sendo membro ativo deste grupo, oferece-o; se for de outro grupo, não o revela nem o junta.
+ * Se o nome já existir: sendo membro ativo deste grupo, oferece-o; senão (outro grupo ou removido daqui), junta-o.
  */
 export async function addPlayer(name: string): Promise<AddPlayerResult> {
   let existing: PlayerSummary | undefined;
@@ -48,14 +48,22 @@ export async function addPlayer(name: string): Promise<AddPlayerResult> {
           where: { groupId_playerId: { groupId, playerId: out.existing.id } },
           select: { active: true },
         });
-        if (!m) {
-          return {
-            ok: false as const,
-            code: "elsewhere",
-            error: "Já existe alguém com esse nome noutro grupo. Usa outro nome (ex.: com apelido) ou pede ao admin para o adicionar.",
-          };
-        }
-        return { ...out, existing: { ...out.existing, active: m.active } };
+        // Já é membro ativo deste grupo: oferece-o em vez de criar outro.
+        if (m?.active) return { ...out, existing: { ...out.existing, active: true } };
+        const p = await tx.player.findUnique({ where: { id: out.existing.id }, select: { active: true } });
+        if (!p?.active) return { ok: false as const, code: "inactive", error: "Esse perfil está desativado." };
+        // Pessoa de outro grupo (ou removida deste): qualquer membro a pode juntar.
+        if (m) await tx.membership.update({ where: { groupId_playerId: { groupId, playerId: out.existing.id } }, data: { active: true } });
+        else await tx.membership.create({ data: { groupId, playerId: out.existing.id } });
+        await logActivity(tx, {
+          actorPlayerId: viewer.id,
+          groupId,
+          action: "group.addMember",
+          entityType: "player",
+          entityId: out.existing.id,
+          summary: `${viewer.name} juntou ${out.existing.name} ao grupo`,
+        });
+        return { ok: true as const, player: { ...out.existing, active: true } };
       }
       return out;
     });
@@ -267,21 +275,22 @@ export async function resetMemberPin(playerId: string, pin: string): Promise<Act
 }
 
 /**
- * Admin junta um membro ao grupo: se o nome já existe (pessoa de outro grupo), junta essa pessoa;
+ * Qualquer membro junta alguém ao grupo: se o nome já existe (pessoa de outro grupo), junta essa pessoa;
  * se não existe, cria o perfil (sem PIN: define-o no primeiro acesso).
  */
 export async function addMember(_: unknown, form: FormData): Promise<ActionResult & { created?: boolean }> {
   let created = false;
   const r = await run(async () => {
-    const { viewer, groupId } = await requireAdmin();
+    const { viewer, groupId } = await requireGroupMember();
     const v = validateName(form.get("name"));
     if ("error" in v) throw new UserError(v.error);
     await db.$transaction(async (tx) => {
-      let p = await tx.player.findUnique({ where: { nameKey: v.key }, select: { id: true, name: true } });
+      let p = await tx.player.findUnique({ where: { nameKey: v.key }, select: { id: true, name: true, active: true } });
+      if (p && !p.active) throw new UserError(`O perfil de ${p.name} está desativado.`);
       if (!p) {
         const out = await createPlayer(prismaPlayerStore(tx), v.name, viewer.id);
         if (!out.ok) throw new UserError(out.error);
-        p = { id: out.player.id, name: out.player.name };
+        p = { id: out.player.id, name: out.player.name, active: true };
         created = true;
       }
       const existing = await tx.membership.findUnique({
@@ -297,7 +306,7 @@ export async function addMember(_: unknown, form: FormData): Promise<ActionResul
         action: "group.addMember",
         entityType: "player",
         entityId: p.id,
-        summary: `${viewer.name} (admin) juntou ${p.name} ao grupo`,
+        summary: `${viewer.name} juntou ${p.name} ao grupo`,
       });
     });
     return {};

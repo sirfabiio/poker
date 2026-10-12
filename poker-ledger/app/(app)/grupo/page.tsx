@@ -23,7 +23,7 @@ export default async function GroupSettings() {
     admin ? getGroupMembers(groupId) : [],
     groupObligations(groupId),
     admin ? groupDeleteBlockers(groupId) : [],
-    admin ? getJoinCandidates(groupId) : [],
+    getJoinCandidates(groupId),
   ]);
   const mine = obligations.get(viewer.id);
   const others = members.filter((m) => m.active && m.id !== viewer.id);
@@ -41,16 +41,16 @@ export default async function GroupSettings() {
         </p>
       </header>
 
+      <SectionTitle>Juntar membro</SectionTitle>
+      <Card>
+        <AddMemberForm candidates={candidates} />
+      </Card>
+
       {admin && (
         <>
           <SectionTitle>Nome do grupo</SectionTitle>
           <Card>
             <RenameGroupForm name={groupName} />
-          </Card>
-
-          <SectionTitle>Juntar membro</SectionTitle>
-          <Card>
-            <AddMemberForm candidates={candidates} />
           </Card>
 
           <SectionTitle>Membros</SectionTitle>
