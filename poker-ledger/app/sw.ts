@@ -29,6 +29,24 @@ const notifyOnChange: SerwistPlugin = {
   },
 };
 
+/**
+ * Uma página que o servidor redireciona (sessão terminada → Entrar, sem grupo → Grupos) quer dizer que a cópia
+ * em cache já não vale para este utilizador: apaga as páginas guardadas (também por privacidade, num dispositivo
+ * partilhado) e avisa a app, que recarrega e segue o redirecionamento.
+ */
+const PAGE_CACHES = ["pages", "session-pages"];
+const onRedirect: SerwistPlugin = {
+  fetchDidSucceed: async ({ request, response }) => {
+    const redirect = response.type === "opaqueredirect" || response.redirected || (response.status >= 300 && response.status < 400);
+    if (request.mode === "navigate" && redirect) {
+      await Promise.all(PAGE_CACHES.map((c) => caches.delete(c)));
+      const clients = await self.clients.matchAll({ type: "window" });
+      for (const c of clients) c.postMessage({ type: "page-redirected", url: request.url });
+    }
+    return response;
+  },
+};
+
 const isNever = (url: URL) => NEVER_CACHE.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`));
 /** Pedidos de dados (RSC das navegações e router.refresh, e /api/*): sempre à rede, para nunca esconderem dados novos. */
 const isData = (url: URL, request: Request) =>
@@ -64,7 +82,7 @@ const serwist = new Serwist({
       matcher: ({ url, request }) => request.mode === "navigate" && isSessionPage(url),
       handler: new NetworkFirst({
         cacheName: "session-pages",
-        plugins: [okOnly, new ExpirationPlugin({ maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14 })],
+        plugins: [okOnly, onRedirect, new ExpirationPlugin({ maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14 })],
       }),
     },
     {
@@ -73,7 +91,7 @@ const serwist = new Serwist({
       matcher: ({ request }) => request.mode === "navigate",
       handler: new StaleWhileRevalidate({
         cacheName: "pages",
-        plugins: [okOnly, notifyOnChange, new ExpirationPlugin({ maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14 })],
+        plugins: [okOnly, onRedirect, notifyOnChange, new ExpirationPlugin({ maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14 })],
       }),
     },
   ],

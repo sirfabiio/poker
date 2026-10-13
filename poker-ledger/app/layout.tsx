@@ -31,9 +31,10 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-// Capta cedo o aviso do service worker "esta página tinha versão mais nova" (antes de o React montar).
+// Capta cedo os avisos do service worker (antes de o React montar): "esta página tinha versão mais nova"
+// e "o servidor redirecionou esta página" (ex.: sessão terminada) → recarrega uma vez para seguir o redirecionamento.
 const SW_STALE_SCRIPT =
-  "navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',function(e){if(e.data&&e.data.type==='page-updated'){window.__plStale=1;dispatchEvent(new Event('pl-stale'))}})";
+  "navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',function(e){var d=e.data;if(!d)return;if(d.type==='page-updated'){window.__plStale=1;dispatchEvent(new Event('pl-stale'))}else if(d.type==='page-redirected'&&d.url.split('#')[0]===location.href.split('#')[0]){var k='pl-redir:'+location.pathname,n=Date.now(),t=0;try{t=+sessionStorage.getItem(k)||0;sessionStorage.setItem(k,n)}catch(x){}if(n-t>3000)location.reload()}})";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
