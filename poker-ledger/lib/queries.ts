@@ -1,5 +1,6 @@
 // Leituras por página: só os campos necessários, sem N+1. TODAS filtradas pelo grupo ativo (groupId vem
 // sempre de getGroupContext/requireGroupPage, validado contra a pertença no servidor).
+import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
@@ -263,9 +264,18 @@ export async function getMyHistory(groupId: string, playerId: string) {
 
 export const ACTIVITY_PAGE_SIZE = 20;
 
-export async function getActivityPage(groupId: string, page: number) {
+/**
+ * Atividade do grupo. Com `onlyFor` (membros que não são admin), as linhas de transferências
+ * (marcar como paga / por pagar) só aparecem se esse jogador paga ou recebe nessa transferência.
+ */
+export async function getActivityPage(groupId: string, page: number, onlyFor?: string) {
+  let where: Prisma.ActivityLogWhereInput = { groupId };
+  if (onlyFor) {
+    const mine = await db.transfer.findMany({ where: { settlement: { groupId }, ...involving(onlyFor) }, select: { id: true } });
+    where = { groupId, OR: [{ entityType: { not: "transfer" } }, { entityId: { in: mine.map((t) => t.id) } }] };
+  }
   const rows = await db.activityLog.findMany({
-    where: { groupId },
+    where,
     orderBy: { createdAt: "desc" },
     skip: (page - 1) * ACTIVITY_PAGE_SIZE,
     take: ACTIVITY_PAGE_SIZE + 1,

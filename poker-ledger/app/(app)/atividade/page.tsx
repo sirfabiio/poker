@@ -10,10 +10,10 @@ import { EmptyState } from "@/components/EmptyState";
 export const metadata: Metadata = { title: "Atividade" };
 
 export default async function Activity({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
-  const { groupId } = await requireGroupPage();
+  const { viewer, groupId, role } = await requireGroupPage();
   const sp = await searchParams;
   const page = Math.max(1, Math.floor(Number(sp.p) || 1));
-  const { rows, hasNext } = await getActivityPage(groupId, page);
+  const { rows, hasNext } = await getActivityPage(groupId, page, role === "ADMIN" ? undefined : viewer.id);
 
   return (
     <>
