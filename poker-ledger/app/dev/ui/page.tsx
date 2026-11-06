@@ -13,6 +13,7 @@ import { PotTable } from "@/components/session/PotTable";
 import { Podium } from "@/components/Podium";
 import { EmptyState } from "@/components/EmptyState";
 import { SessionLive } from "@/components/session/SessionLive";
+import { SealButton } from "@/components/session/SealButton";
 import { AVATAR_COLORS } from "@/lib/colors";
 
 export const metadata = { title: "UI (dev)", robots: { index: false } };
@@ -137,6 +138,13 @@ export default function DevUi() {
         <Card>
           <EmptyState>Nada por aqui ainda.</EmptyState>
         </Card>
+      </Block>
+
+      <Block title="Lacre (confirmação numa folha da app)">
+        <div className="flex flex-wrap gap-2">
+          <SealButton sessionId="demo" mode="seal" />
+          <SealButton sessionId="demo" mode="unseal" />
+        </div>
       </Block>
 
       <Block title="Sessão (otimista; os IDs são falsos, por isso o servidor recusa e a UI reverte)">
