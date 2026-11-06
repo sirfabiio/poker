@@ -10,6 +10,8 @@ export const CHANGE_TYPES = [
   "adjustment_confirmed",
   "adjustment_undone",
   "session_settled",
+  "session_sealed",
+  "session_unsealed",
 ] as const;
 export type ChangeType = (typeof CHANGE_TYPES)[number];
 

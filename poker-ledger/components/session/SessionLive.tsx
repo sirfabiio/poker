@@ -76,6 +76,7 @@ export function SessionLive({
   editable,
   canEditMoney,
   createdByName,
+  sealSlot,
   isAdmin,
 }: {
   sessionId: string;
@@ -86,6 +87,8 @@ export function SessionLive({
   /** Rebuys e cash-outs: só o admin ou quem criou a sessão (validado também no servidor). */
   canEditMoney: boolean;
   createdByName: string;
+  /** botão "Lacrar sessão" (só aparece com a sessão válida: cash-outs completos e contagem certa) */
+  sealSlot?: React.ReactNode;
   isAdmin: boolean;
 }) {
   const [state, apply] = useOptimistic<State, Op>({ players, rec: reconciliation }, reduce);
@@ -243,6 +246,12 @@ export function SessionLive({
         </div>
       )}
       {editable && !online && <p className="mt-3 text-sm text-ivory/75">{OFFLINE_HINT}</p>}
+      {sealSlot && totals.valid && list.length > 0 && (
+        <div className="mt-3 rounded-2xl bg-ink/40 px-4 py-3 text-sm">
+          <p className="mb-2 text-ivory/80">Contas certas. Lacra a sessão para que só o admin a possa alterar.</p>
+          {sealSlot}
+        </div>
+      )}
       {editable && !canEditMoney && (
         <p className="mt-3 rounded-2xl bg-ink/40 px-4 py-3 text-sm text-ivory/80">
           Só o admin do grupo ou {createdByName} (quem criou a sessão) pode registar rebuys e cash-outs.

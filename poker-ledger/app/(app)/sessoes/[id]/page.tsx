@@ -4,13 +4,14 @@ import { notFound } from "next/navigation";
 import { requireGroupPage } from "@/lib/group";
 import { getActivePlayers, getSessionDetail } from "@/lib/queries";
 import { formatDay, toDateInput } from "@/lib/format";
-import { canEditSessionMoney } from "@/lib/session-permissions";
+import { canEditSession, canEditSessionMoney, canSealSession, canUnsealSession } from "@/lib/session-permissions";
 import { Sheet } from "@/components/ui/Sheet";
 import { SessionLive } from "@/components/session/SessionLive";
 import { LiveSession } from "@/components/session/LiveSession";
 import { AddPlayersForm } from "@/components/session/AddPlayersForm";
 import { EditSessionForm } from "@/components/session/EditSessionForm";
 import { DeleteSessionForm } from "@/components/session/DeleteSessionForm";
+import { SealButton } from "@/components/session/SealButton";
 
 export const metadata: Metadata = { title: "Sessão" };
 
@@ -21,7 +22,11 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const [s, active] = await Promise.all([getSessionDetail(groupId, id), getActivePlayers(groupId)]);
   if (!s) notFound();
   const editable = !s.settlement;
-  const canEditMoney = canEditSessionMoney({ role, viewerId: viewer.id, createdByPlayerId: s.createdByPlayerId });
+  const sealed = s.sealedAt !== null;
+  const who = { role, viewerId: viewer.id, createdByPlayerId: s.createdByPlayerId, sealed };
+  const canEdit = editable && canEditSession(who);
+  const canEditMoney = canEditSessionMoney(who);
+  const canSeal = editable && !sealed && canSealSession(who);
   const inSession = new Set(s.players.map((p) => p.playerId));
   const names = Object.fromEntries([...active.map((p) => [p.id, p.name]), ...s.players.map((p) => [p.playerId, p.player.name])]);
 
@@ -47,19 +52,37 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
           . Já não pode ser editada.
         </p>
       ) : (
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Sheet label="Escolher jogadores" title="Escolher jogadores" size="sm">
-            <AddPlayersForm sessionId={s.id} players={active.filter((p) => !inSession.has(p.id))} />
-          </Sheet>
-          <Sheet label="Editar sessão" title="Editar sessão" size="sm">
-            <EditSessionForm sessionId={s.id} date={toDateInput(s.date)} defaultBuyIn={s.defaultBuyIn} notes={s.notes ?? ""} />
-          </Sheet>
-          {admin && (
-            <Sheet label="Apagar sessão" title="Apagar sessão" variant="danger" size="sm">
-              <DeleteSessionForm sessionId={s.id} summary={`a sessão de ${formatDay(s.date)}`} />
-            </Sheet>
+        <>
+          {sealed && (
+            <div className="mb-4 rounded-2xl bg-ink/40 px-4 py-3 text-sm">
+              <p>
+                🔏{"︎"} Lacrada{s.sealedBy ? ` por ${s.sealedBy.name}` : ""}. Só o admin do grupo pode alterar esta sessão.
+              </p>
+              {canUnsealSession({ role }) && (
+                <div className="mt-3">
+                  <SealButton sessionId={s.id} mode="unseal" />
+                </div>
+              )}
+            </div>
           )}
-        </div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {canEdit && (
+              <Sheet label="Escolher jogadores" title="Escolher jogadores" size="sm">
+                <AddPlayersForm sessionId={s.id} players={active.filter((p) => !inSession.has(p.id))} />
+              </Sheet>
+            )}
+            {canEdit && (
+              <Sheet label="Editar sessão" title="Editar sessão" size="sm">
+                <EditSessionForm sessionId={s.id} date={toDateInput(s.date)} defaultBuyIn={s.defaultBuyIn} notes={s.notes ?? ""} />
+              </Sheet>
+            )}
+            {admin && (
+              <Sheet label="Apagar sessão" title="Apagar sessão" variant="danger" size="sm">
+                <DeleteSessionForm sessionId={s.id} summary={`a sessão de ${formatDay(s.date)}`} />
+              </Sheet>
+            )}
+          </div>
+        </>
       )}
 
       <LiveSession sessionId={s.id} version={s.version} viewerId={viewer.id} names={names} settled={!editable}>
@@ -76,8 +99,9 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
                 }
               : null
           }
-          editable={editable}
+          editable={canEdit}
           canEditMoney={canEditMoney}
+          sealSlot={canSeal ? <SealButton sessionId={s.id} mode="seal" /> : null}
           createdByName={s.createdBy.name}
           defaultBuyIn={s.defaultBuyIn}
           players={s.players.map((p) => ({

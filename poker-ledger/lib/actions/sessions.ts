@@ -7,7 +7,8 @@ import type { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
 import { requireGroupMember, type GroupRole } from "../group";
-import { canEditSessionMoney } from "../session-permissions";
+import { canEditSession, canEditSessionMoney, canSealSession } from "../session-permissions";
+import { checkSession } from "../ledger";
 import { logActivity } from "../activity";
 import { isValidAmount, formatCents } from "../money";
 import { formatDay, parseDateInput } from "../format";
@@ -16,10 +17,12 @@ import { bumpSessionVersion } from "../live/bump";
 import { exceedsSoftLimit, isReconcileMethod, METHOD_LABELS, reconcile, ReconcileError, type ReconcileMethod } from "../reconcile";
 
 const CLOSED = "Esta sessão já foi fechada nas contas e não pode ser editada.";
+const SEALED = "Esta sessão está lacrada: só o admin do grupo a pode alterar.";
 
 type LockedSession = {
   settlementId: string | null;
   createdByPlayerId: string;
+  sealedAt: Date | null;
   date: Date;
   reconciledAt: Date | null;
   discrepancy: number | null;
@@ -29,19 +32,21 @@ type LockedSession = {
 /**
  * Bloqueia a linha da sessão (FOR UPDATE) e garante que é DO GRUPO ATIVO e que ainda está em aberto.
  * Uma sessão de outro grupo dá "não encontrada" (não revela que existe).
+ * Com a sessão lacrada, só o admin do grupo passa daqui.
  */
-async function lockOpenSession(tx: Prisma.TransactionClient, groupId: string, sessionId: string) {
+async function lockOpenSession(tx: Prisma.TransactionClient, groupId: string, sessionId: string, role: GroupRole) {
   const rows = await tx.$queryRaw<LockedSession[]>`
-    SELECT "settlementId", "createdByPlayerId", "date", "reconciledAt", "discrepancy", "adjustmentMethod"::text AS "adjustmentMethod"
+    SELECT "settlementId", "createdByPlayerId", "sealedAt", "date", "reconciledAt", "discrepancy", "adjustmentMethod"::text AS "adjustmentMethod"
     FROM "Session" WHERE "id" = ${sessionId} AND "groupId" = ${groupId} FOR UPDATE`;
   if (rows.length === 0) throw new UserError("Sessão não encontrada.");
   if (rows[0].settlementId) throw new UserError(CLOSED, "closed");
+  if (!canEditSession({ role, sealed: rows[0].sealedAt !== null })) throw new UserError(SEALED, "sealed");
   return rows[0];
 }
 
 /** Rebuys e cash-outs: só o admin do grupo ou quem criou a sessão. */
 function assertCanEditMoney(s: LockedSession, viewerId: string, role: GroupRole) {
-  if (!canEditSessionMoney({ role, viewerId, createdByPlayerId: s.createdByPlayerId })) {
+  if (!canEditSessionMoney({ role, viewerId, createdByPlayerId: s.createdByPlayerId, sealed: s.sealedAt !== null })) {
     throw new UserError("Só o admin do grupo ou quem criou a sessão pode registar rebuys e cash-outs.", "not_allowed");
   }
 }
@@ -77,13 +82,13 @@ async function annulAdjustmentIfAny(
   });
 }
 
-async function lockBySessionPlayer(tx: Prisma.TransactionClient, groupId: string, sessionPlayerId: string) {
+async function lockBySessionPlayer(tx: Prisma.TransactionClient, groupId: string, sessionPlayerId: string, role: GroupRole) {
   const sp = await tx.sessionPlayer.findUnique({
     where: { id: sessionPlayerId },
     select: { sessionId: true, player: { select: { name: true } } },
   });
   if (!sp) throw new UserError("Jogador não encontrado nesta sessão.");
-  const s = await lockOpenSession(tx, groupId, sp.sessionId);
+  const s = await lockOpenSession(tx, groupId, sp.sessionId, role);
   return { sessionId: sp.sessionId, playerName: sp.player.name, day: formatDay(s.date), locked: s };
 }
 
@@ -153,13 +158,13 @@ export async function updateSession(
   input: { date: string; defaultBuyIn: number; notes?: string },
 ): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireGroupMember();
+    const { viewer, groupId, role } = await requireGroupMember();
     const date = parseDateInput(String(input?.date ?? ""));
     if (!date) throw new UserError("Escolhe uma data válida.");
     if (!isValidAmount(input.defaultBuyIn)) throw new UserError("O buy-in tem de ser maior que zero.");
     const notes = String(input.notes ?? "").trim().slice(0, 280) || null;
     await db.$transaction(async (tx) => {
-      await lockOpenSession(tx, groupId, sessionId);
+      await lockOpenSession(tx, groupId, sessionId, role);
       await tx.session.update({ where: { id: sessionId }, data: { date, notes, defaultBuyIn: input.defaultBuyIn } });
       await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "session_edited" });
       await logActivity(tx, {
@@ -179,11 +184,11 @@ export async function updateSession(
 
 export async function addSessionPlayers(sessionId: string, playerIds: string[]): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireGroupMember();
+    const { viewer, groupId, role } = await requireGroupMember();
     const ids = uniqueIds(playerIds);
     if (ids.length === 0) throw new UserError("Escolhe pelo menos um jogador.");
     await db.$transaction(async (tx) => {
-      const s = await lockOpenSession(tx, groupId, sessionId);
+      const s = await lockOpenSession(tx, groupId, sessionId, role);
       await assertActivePlayers(tx, groupId, ids);
       const session = await tx.session.findUniqueOrThrow({
         where: { id: sessionId },
@@ -218,9 +223,9 @@ export async function addSessionPlayers(sessionId: string, playerIds: string[]):
 
 export async function removeSessionPlayer(sessionPlayerId: string): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireGroupMember();
+    const { viewer, groupId, role } = await requireGroupMember();
     await db.$transaction(async (tx) => {
-      const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId);
+      const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId, role);
       await tx.sessionPlayer.delete({ where: { id: sessionPlayerId } });
       await annulAdjustmentIfAny(tx, groupId, ctx.sessionId, ctx.locked, viewer);
       await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "player_removed" });
@@ -245,7 +250,7 @@ export async function addBuyIn(sessionPlayerId: string, amount: number): Promise
     const { viewer, groupId, role } = await requireGroupMember();
     if (!isValidAmount(amount)) throw new UserError("O valor tem de ser maior que zero.");
     await db.$transaction(async (tx) => {
-      const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId);
+      const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId, role);
       assertCanEditMoney(ctx.locked, viewer.id, role);
       const b = await tx.buyIn.create({ data: { sessionPlayerId, amount }, select: { id: true } });
       await annulAdjustmentIfAny(tx, groupId, ctx.sessionId, ctx.locked, viewer);
@@ -272,7 +277,7 @@ export async function removeBuyIn(buyInId: string): Promise<ActionResult> {
     await db.$transaction(async (tx) => {
       const b = await tx.buyIn.findUnique({ where: { id: buyInId }, select: { sessionPlayerId: true, amount: true } });
       if (!b) throw new UserError("Esta entrada já não existe.");
-      const ctx = await lockBySessionPlayer(tx, groupId, b.sessionPlayerId);
+      const ctx = await lockBySessionPlayer(tx, groupId, b.sessionPlayerId, role);
       assertCanEditMoney(ctx.locked, viewer.id, role);
       await tx.buyIn.delete({ where: { id: buyInId } });
       await annulAdjustmentIfAny(tx, groupId, ctx.sessionId, ctx.locked, viewer);
@@ -298,7 +303,7 @@ export async function setCashOut(sessionPlayerId: string, amount: number | null)
     const { viewer, groupId, role } = await requireGroupMember();
     if (amount !== null && !isValidAmount(amount, true)) throw new UserError("Valor de cash-out inválido.");
     await db.$transaction(async (tx) => {
-      const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId);
+      const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId, role);
       assertCanEditMoney(ctx.locked, viewer.id, role);
       await tx.sessionPlayer.update({ where: { id: sessionPlayerId }, data: { cashOut: amount } });
       await annulAdjustmentIfAny(tx, groupId, ctx.sessionId, ctx.locked, viewer);
@@ -334,7 +339,7 @@ export async function reconcileSession(sessionId: string, req: ReconcileRequest)
     const { viewer, groupId, role } = await requireGroupMember();
     if (!isReconcileMethod(req?.method)) throw new UserError("Escolhe um método de ajuste válido.");
     await db.$transaction(async (tx) => {
-      const s = await lockOpenSession(tx, groupId, sessionId);
+      const s = await lockOpenSession(tx, groupId, sessionId, role);
       if (s.reconciledAt) throw new UserError("Esta sessão já tem um ajuste. Desfaz o ajuste atual primeiro.");
       const players = await tx.sessionPlayer.findMany({
         where: { sessionId },
@@ -393,9 +398,9 @@ export async function reconcileSession(sessionId: string, req: ReconcileRequest)
 /** Desfazer o ajuste (só com a sessão em aberto). */
 export async function undoReconcile(sessionId: string): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireGroupMember();
+    const { viewer, groupId, role } = await requireGroupMember();
     await db.$transaction(async (tx) => {
-      const s = await lockOpenSession(tx, groupId, sessionId);
+      const s = await lockOpenSession(tx, groupId, sessionId, role);
       if (!s.reconciledAt) throw new UserError("Esta sessão não tem nenhum ajuste para desfazer.");
       await clearAdjustment(tx, sessionId);
       await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "adjustment_undone" });
@@ -416,13 +421,75 @@ export async function undoReconcile(sessionId: string): Promise<ActionResult> {
   return r;
 }
 
+/** Lacrar a sessão: depois disto só o admin do grupo a altera. Só com todos os cash-outs e a contagem certa. */
+export async function sealSession(sessionId: string): Promise<ActionResult> {
+  const r = await run(async () => {
+    const { viewer, groupId, role } = await requireGroupMember();
+    await db.$transaction(async (tx) => {
+      const s = await lockOpenSession(tx, groupId, sessionId, role);
+      if (s.sealedAt) throw new UserError("Esta sessão já está lacrada.");
+      if (!canSealSession({ role, viewerId: viewer.id, createdByPlayerId: s.createdByPlayerId })) {
+        throw new UserError("Só o admin do grupo ou quem criou a sessão a pode lacrar.", "not_allowed");
+      }
+      const players = await tx.sessionPlayer.findMany({
+        where: { sessionId },
+        select: { playerId: true, cashOut: true, adjustment: true, buyIns: { select: { amount: true } } },
+      });
+      if (players.length === 0) throw new UserError("A sessão não tem jogadores.");
+      const check = checkSession(
+        players.map((p) => ({ playerId: p.playerId, cashOut: p.cashOut, adjustment: p.adjustment, buyIns: p.buyIns.map((b) => b.amount) })),
+        s.reconciledAt !== null,
+      );
+      if (check.missingCashOuts > 0) throw new UserError("Preenche todos os cash-outs antes de lacrar.");
+      if (!check.valid) throw new UserError("A contagem não bate certo: ajusta a diferença antes de lacrar.");
+      await tx.session.update({ where: { id: sessionId }, data: { sealedAt: new Date(), sealedByPlayerId: viewer.id } });
+      await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "session_sealed" });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        groupId,
+        action: "session.seal",
+        entityType: "session",
+        entityId: sessionId,
+        summary: `${viewer.name} lacrou a sessão de ${formatDay(s.date)}`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) done(sessionId);
+  return r;
+}
+
+/** Tirar o lacre (só admin). */
+export async function unsealSession(sessionId: string): Promise<ActionResult> {
+  const r = await run(async () => {
+    const { viewer, groupId, role } = await requireAdmin();
+    await db.$transaction(async (tx) => {
+      const s = await lockOpenSession(tx, groupId, sessionId, role);
+      if (!s.sealedAt) throw new UserError("Esta sessão não está lacrada.");
+      await tx.session.update({ where: { id: sessionId }, data: { sealedAt: null, sealedByPlayerId: null } });
+      await bumpSessionVersion(tx, { sessionId, actorPlayerId: viewer.id, type: "session_unsealed" });
+      await logActivity(tx, {
+        actorPlayerId: viewer.id,
+        groupId,
+        action: "session.unseal",
+        entityType: "session",
+        entityId: sessionId,
+        summary: `${viewer.name} (admin) tirou o lacre da sessão de ${formatDay(s.date)}`,
+      });
+    });
+    return {};
+  });
+  if (r.ok) done(sessionId);
+  return r;
+}
+
 /** Apagar uma sessão em aberto (só admin). Jogadores e entradas da sessão saem em cascata. */
 export async function deleteSession(sessionId: string): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireAdmin();
+    const { viewer, groupId, role } = await requireAdmin();
     await db.$transaction(async (tx) => {
       // Também recusa sessões já ligadas a um fecho: essas nunca podem ser alteradas.
-      const s = await lockOpenSession(tx, groupId, sessionId);
+      const s = await lockOpenSession(tx, groupId, sessionId, role);
       const players = await tx.sessionPlayer.findMany({
         where: { sessionId },
         select: { player: { select: { name: true } }, buyIns: { select: { amount: true } } },

@@ -171,6 +171,8 @@ const VERBS: Record<string, string> = {
   adjustment_confirmed: "ajustou a diferença de contagem",
   adjustment_undone: "desfez o ajuste de contagem",
   session_settled: "fechou as contas",
+  session_sealed: "lacrou a sessão",
+  session_unsealed: "tirou o lacre da sessão",
 };
 
 export function noticeText(name: string | null, type: string | null): string {

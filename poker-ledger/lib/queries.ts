@@ -170,6 +170,8 @@ export function getSessionDetail(groupId: string, id: string) {
       settlement: { select: { id: true, label: true } },
       createdByPlayerId: true,
       createdBy: { select: { name: true } },
+      sealedAt: true,
+      sealedBy: { select: { name: true } },
       players: {
         orderBy: { player: { name: "asc" } },
         select: {

@@ -31,6 +31,7 @@ model Player {
   sessions       Session[]       @relation("SessionCreatedBy")
   adjustedIn     Session[]       @relation("SessionAdjustmentPlayer")
   reconciled     Session[]       @relation("SessionReconciledBy")
+  sealed         Session[]       @relation("SessionSealedBy")
   sessionPlayers SessionPlayer[]
   transfersOut   Transfer[]      @relation("TransferFrom")
   transfersIn    Transfer[]      @relation("TransferTo")
@@ -113,16 +114,21 @@ model Session {
   reconciledAt         DateTime?
   reconciledByPlayerId String?
 
+  /// Lacre: com a sessão lacrada só o admin do grupo a pode alterar (null = sem lacre)
+  sealedAt         DateTime?
+  sealedByPlayerId String?
+
   /// Sobe 1 em cada escrita na sessão (mesma transação): as páginas abertas comparam-na para se atualizarem.
   version           Int     @default(0)
   lastActorPlayerId String?
   /// rebuy_added, rebuy_removed, cashout_set, player_added, player_removed, session_edited,
-  /// adjustment_confirmed, adjustment_undone, session_settled (lib/live/bump.ts)
+  /// adjustment_confirmed, adjustment_undone, session_settled, session_sealed, session_unsealed (lib/live/bump.ts)
   lastChangeType    String?
 
   createdBy        Player          @relation("SessionCreatedBy", fields: [createdByPlayerId], references: [id])
   adjustmentPlayer Player?         @relation("SessionAdjustmentPlayer", fields: [adjustmentPlayerId], references: [id])
   reconciledBy     Player?         @relation("SessionReconciledBy", fields: [reconciledByPlayerId], references: [id])
+  sealedBy         Player?         @relation("SessionSealedBy", fields: [sealedByPlayerId], references: [id], onDelete: SetNull)
   settlement       Settlement?     @relation(fields: [settlementId], references: [id])
   group            Group?          @relation(fields: [groupId], references: [id])
   players          SessionPlayer[]
@@ -132,6 +138,7 @@ model Session {
   @@index([createdByPlayerId])
   @@index([adjustmentPlayerId])
   @@index([reconciledByPlayerId])
+  @@index([sealedByPlayerId])
   @@index([date])
 }
 
