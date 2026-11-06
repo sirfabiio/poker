@@ -74,6 +74,8 @@ export function SessionLive({
   reconciliation,
   defaultBuyIn,
   editable,
+  canEditMoney,
+  createdByName,
   isAdmin,
 }: {
   sessionId: string;
@@ -81,6 +83,9 @@ export function SessionLive({
   reconciliation: Reconciliation | null;
   defaultBuyIn: number;
   editable: boolean;
+  /** Rebuys e cash-outs: só o admin ou quem criou a sessão (validado também no servidor). */
+  canEditMoney: boolean;
+  createdByName: string;
   isAdmin: boolean;
 }) {
   const [state, apply] = useOptimistic<State, Op>({ players, rec: reconciliation }, reduce);
@@ -238,6 +243,11 @@ export function SessionLive({
         </div>
       )}
       {editable && !online && <p className="mt-3 text-sm text-ivory/75">{OFFLINE_HINT}</p>}
+      {editable && !canEditMoney && (
+        <p className="mt-3 rounded-2xl bg-ink/40 px-4 py-3 text-sm text-ivory/80">
+          Só o admin do grupo ou {createdByName} (quem criou a sessão) pode registar rebuys e cash-outs.
+        </p>
+      )}
 
       <ul className="mt-4 space-y-3">
         {list.map((p) => (
@@ -246,6 +256,7 @@ export function SessionLive({
             p={p}
             defaultBuyIn={defaultBuyIn}
             editable={editable}
+            money={editable && canEditMoney}
             canEdit={canEdit}
             drop={dropFor === p.id}
             onRebuy={(amount) => act({ t: "add", sp: p.id, id: `tmp-${++tmp}`, amount }, () => addBuyIn(p.id, amount))}
@@ -270,6 +281,7 @@ function PlayerCard({
   p,
   defaultBuyIn,
   editable,
+  money,
   canEdit,
   drop,
   onRebuy,
@@ -281,6 +293,8 @@ function PlayerCard({
   p: LivePlayer;
   defaultBuyIn: number;
   editable: boolean;
+  /** pode registar rebuys/cash-outs nesta sessão */
+  money: boolean;
   canEdit: boolean;
   drop: boolean;
   onRebuy: (amount: number) => void;
@@ -323,7 +337,7 @@ function PlayerCard({
         </div>
       </div>
 
-      {editable && (
+      {money && (
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" disabled={!canEdit} onClick={() => onRebuy(defaultBuyIn)} className={buttonClass("primary", "sm")}>
             Rebuy {formatCents(defaultBuyIn)}
@@ -340,7 +354,7 @@ function PlayerCard({
         </div>
       )}
 
-      {editable && custom && (
+      {money && custom && (
         <form
           className="mt-3 flex items-end gap-2"
           onSubmit={(e) => {
@@ -360,9 +374,9 @@ function PlayerCard({
         </form>
       )}
 
-      {editable && custom && rebuy.warning && <FieldWarningNote warning={rebuy.warning} onUse={rebuy.useServerValue} />}
+      {money && custom && rebuy.warning && <FieldWarningNote warning={rebuy.warning} onUse={rebuy.useServerValue} />}
 
-      {editable ? (
+      {money ? (
         <form
           className="mt-3 flex items-end gap-2"
           onSubmit={(e) => {
@@ -389,7 +403,7 @@ function PlayerCard({
           Cash-out: {p.cashOut === null ? "—" : <Money cents={p.cashOut} />}
         </p>
       )}
-      {editable && cash.warning && <FieldWarningNote warning={cash.warning} onUse={cash.useServerValue} />}
+      {money && cash.warning && <FieldWarningNote warning={cash.warning} onUse={cash.useServerValue} />}
       {p.adjustment !== 0 && (
         <p className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-ink/30 px-3 py-1.5 text-sm">
           <span>Ajuste de contagem</span>
@@ -412,7 +426,7 @@ function PlayerCard({
               <span>
                 {i === 0 ? "Buy-in" : `Rebuy ${i}`} · <Money cents={b.amount} />
               </span>
-              {editable && (
+              {money && (
                 <button
                   type="button"
                   disabled={!canEdit || b.id.startsWith("tmp-")}

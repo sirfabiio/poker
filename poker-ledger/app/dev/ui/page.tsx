@@ -145,6 +145,8 @@ export default function DevUi() {
           isAdmin={false}
           reconciliation={null}
           editable
+          canEditMoney
+          createdByName="Ana"
           defaultBuyIn={2000}
           players={[
             { id: "x1", playerId: "p1", name: "Ana", avatarColor: "blue", cashOut: null, adjustment: 0, buyIns: [{ id: "b1", amount: 2000 }] },

@@ -29,7 +29,7 @@ const player = (id: string, name: string, cashOut: number | null = null): LivePl
 function view(players: LivePlayer[], actor: string | null = "Rui") {
   return (
     <LiveActorContext.Provider value={actor}>
-      <SessionLive sessionId="s1" players={players} reconciliation={null} defaultBuyIn={2000} editable isAdmin={false} />
+      <SessionLive sessionId="s1" players={players} reconciliation={null} defaultBuyIn={2000} editable canEditMoney createdByName="Ana" isAdmin={false} />
     </LiveActorContext.Provider>
   );
 }

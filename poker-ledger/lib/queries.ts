@@ -168,6 +168,7 @@ export function getSessionDetail(groupId: string, id: string) {
       reconciledBy: { select: { name: true } },
       adjustmentPlayer: { select: { name: true } },
       settlement: { select: { id: true, label: true } },
+      createdByPlayerId: true,
       createdBy: { select: { name: true } },
       players: {
         orderBy: { player: { name: "asc" } },

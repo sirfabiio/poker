@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { run, UserError, type ActionResult } from "../errors";
-import { requireGroupMember } from "../group";
+import { requireGroupMember, type GroupRole } from "../group";
+import { canEditSessionMoney } from "../session-permissions";
 import { logActivity } from "../activity";
 import { isValidAmount, formatCents } from "../money";
 import { formatDay, parseDateInput } from "../format";
@@ -18,6 +19,7 @@ const CLOSED = "Esta sessão já foi fechada nas contas e não pode ser editada.
 
 type LockedSession = {
   settlementId: string | null;
+  createdByPlayerId: string;
   date: Date;
   reconciledAt: Date | null;
   discrepancy: number | null;
@@ -30,11 +32,18 @@ type LockedSession = {
  */
 async function lockOpenSession(tx: Prisma.TransactionClient, groupId: string, sessionId: string) {
   const rows = await tx.$queryRaw<LockedSession[]>`
-    SELECT "settlementId", "date", "reconciledAt", "discrepancy", "adjustmentMethod"::text AS "adjustmentMethod"
+    SELECT "settlementId", "createdByPlayerId", "date", "reconciledAt", "discrepancy", "adjustmentMethod"::text AS "adjustmentMethod"
     FROM "Session" WHERE "id" = ${sessionId} AND "groupId" = ${groupId} FOR UPDATE`;
   if (rows.length === 0) throw new UserError("Sessão não encontrada.");
   if (rows[0].settlementId) throw new UserError(CLOSED, "closed");
   return rows[0];
+}
+
+/** Rebuys e cash-outs: só o admin do grupo ou quem criou a sessão. */
+function assertCanEditMoney(s: LockedSession, viewerId: string, role: GroupRole) {
+  if (!canEditSessionMoney({ role, viewerId, createdByPlayerId: s.createdByPlayerId })) {
+    throw new UserError("Só o admin do grupo ou quem criou a sessão pode registar rebuys e cash-outs.", "not_allowed");
+  }
 }
 
 /** Repõe a sessão sem ajuste de contagem (adjustment = 0, campos de reconciliação a null). */
@@ -233,10 +242,11 @@ export async function removeSessionPlayer(sessionPlayerId: string): Promise<Acti
 /** Rebuy (ou novo buy-in) com o valor indicado em cêntimos. */
 export async function addBuyIn(sessionPlayerId: string, amount: number): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireGroupMember();
+    const { viewer, groupId, role } = await requireGroupMember();
     if (!isValidAmount(amount)) throw new UserError("O valor tem de ser maior que zero.");
     await db.$transaction(async (tx) => {
       const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId);
+      assertCanEditMoney(ctx.locked, viewer.id, role);
       const b = await tx.buyIn.create({ data: { sessionPlayerId, amount }, select: { id: true } });
       await annulAdjustmentIfAny(tx, groupId, ctx.sessionId, ctx.locked, viewer);
       await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "rebuy_added" });
@@ -258,11 +268,12 @@ export async function addBuyIn(sessionPlayerId: string, amount: number): Promise
 /** Remover uma entrada registada por engano. */
 export async function removeBuyIn(buyInId: string): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireGroupMember();
+    const { viewer, groupId, role } = await requireGroupMember();
     await db.$transaction(async (tx) => {
       const b = await tx.buyIn.findUnique({ where: { id: buyInId }, select: { sessionPlayerId: true, amount: true } });
       if (!b) throw new UserError("Esta entrada já não existe.");
       const ctx = await lockBySessionPlayer(tx, groupId, b.sessionPlayerId);
+      assertCanEditMoney(ctx.locked, viewer.id, role);
       await tx.buyIn.delete({ where: { id: buyInId } });
       await annulAdjustmentIfAny(tx, groupId, ctx.sessionId, ctx.locked, viewer);
       await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "rebuy_removed" });
@@ -284,10 +295,11 @@ export async function removeBuyIn(buyInId: string): Promise<ActionResult> {
 /** Cash-out final (cêntimos); null limpa o valor. */
 export async function setCashOut(sessionPlayerId: string, amount: number | null): Promise<ActionResult> {
   const r = await run(async () => {
-    const { viewer, groupId } = await requireGroupMember();
+    const { viewer, groupId, role } = await requireGroupMember();
     if (amount !== null && !isValidAmount(amount, true)) throw new UserError("Valor de cash-out inválido.");
     await db.$transaction(async (tx) => {
       const ctx = await lockBySessionPlayer(tx, groupId, sessionPlayerId);
+      assertCanEditMoney(ctx.locked, viewer.id, role);
       await tx.sessionPlayer.update({ where: { id: sessionPlayerId }, data: { cashOut: amount } });
       await annulAdjustmentIfAny(tx, groupId, ctx.sessionId, ctx.locked, viewer);
       await bumpSessionVersion(tx, { sessionId: ctx.sessionId, actorPlayerId: viewer.id, type: "cashout_set" });

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireGroupPage } from "@/lib/group";
 import { getActivePlayers, getSessionDetail } from "@/lib/queries";
 import { formatDay, toDateInput } from "@/lib/format";
+import { canEditSessionMoney } from "@/lib/session-permissions";
 import { Sheet } from "@/components/ui/Sheet";
 import { SessionLive } from "@/components/session/SessionLive";
 import { LiveSession } from "@/components/session/LiveSession";
@@ -20,6 +21,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const [s, active] = await Promise.all([getSessionDetail(groupId, id), getActivePlayers(groupId)]);
   if (!s) notFound();
   const editable = !s.settlement;
+  const canEditMoney = canEditSessionMoney({ role, viewerId: viewer.id, createdByPlayerId: s.createdByPlayerId });
   const inSession = new Set(s.players.map((p) => p.playerId));
   const names = Object.fromEntries([...active.map((p) => [p.id, p.name]), ...s.players.map((p) => [p.playerId, p.player.name])]);
 
@@ -75,6 +77,8 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
               : null
           }
           editable={editable}
+          canEditMoney={canEditMoney}
+          createdByName={s.createdBy.name}
           defaultBuyIn={s.defaultBuyIn}
           players={s.players.map((p) => ({
             id: p.id,
