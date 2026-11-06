@@ -11,7 +11,7 @@ import { centsToInput, formatCents, parseEuros } from "@/lib/money";
 import type { ActionResult } from "@/lib/errors";
 import { useOnline, OFFLINE_HINT } from "@/lib/use-online";
 import { exceedsSoftLimit, METHOD_LABELS, type ReconcileMethod } from "@/lib/reconcile";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet, useSheet } from "@/components/ui/Sheet";
 import { PotTable } from "./PotTable";
 import { MoneyInput } from "./MoneyInput";
 import { ReconcileForm } from "./ReconcileForm";
@@ -450,19 +450,42 @@ function PlayerCard({
           ))}
         </ul>
         {editable && (
-          <button
-            type="button"
-            disabled={!canEdit}
-            onClick={() => {
-              if (confirm(`Tirar ${p.name} desta sessão? As entradas dele/dela são apagadas.`)) onRemove();
-            }}
-            className={buttonClass("danger", "sm", "mt-3")}
-          >
-            Tirar da sessão
-          </button>
+          <div className="mt-3">
+            <Sheet label="Tirar da sessão" title={`Tirar ${p.name}`} variant="danger" size="sm" disabled={!canEdit}>
+              <RemovePlayerConfirm name={p.name} onConfirm={onRemove} />
+            </Sheet>
+          </div>
         )}
       </details>
     </li>
+  );
+}
+
+/** Confirmação para tirar um jogador, numa folha da app (em vez do popup do sistema). */
+function RemovePlayerConfirm({ name, onConfirm }: { name: string; onConfirm: () => void }) {
+  const { close } = useSheet();
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-ivory/90">
+        Vais tirar <strong>{name}</strong> desta sessão. As entradas e o cash-out dele/dela nesta sessão são apagados. Fica registado no
+        histórico de atividade.
+      </p>
+      <div className="flex gap-2">
+        <button type="button" onClick={close} className={buttonClass("secondary", "lg", "flex-1")}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            close();
+            onConfirm();
+          }}
+          className={buttonClass("danger", "lg", "flex-1")}
+        >
+          Tirar
+        </button>
+      </div>
+    </div>
   );
 }
 
