@@ -87,7 +87,15 @@ export const getOpenState = cache(async (groupId: string): Promise<OpenState> =>
   };
 });
 
-export function getSettlements(groupId: string, take?: number) {
+/** Transferências em que o jogador paga ou recebe. */
+const involving = (playerId: string) => ({ OR: [{ fromPlayerId: playerId }, { toPlayerId: playerId }] });
+
+/**
+ * Fechos do grupo. Com `onlyFor` (membros que não são admin), as contagens de transferências
+ * só incluem as desse jogador (as que paga ou recebe).
+ */
+export function getSettlements(groupId: string, take?: number, onlyFor?: string) {
+  const mine = onlyFor ? involving(onlyFor) : {};
   return db.settlement.findMany({
     where: { groupId },
     orderBy: { closedAt: "desc" },
@@ -96,8 +104,8 @@ export function getSettlements(groupId: string, take?: number) {
       id: true,
       label: true,
       closedAt: true,
-      _count: { select: { transfers: true, sessions: true } },
-      transfers: { where: { paid: true }, select: { id: true } },
+      _count: { select: { transfers: onlyFor ? { where: mine } : true, sessions: true } },
+      transfers: { where: { paid: true, ...mine }, select: { id: true } },
     },
   });
 }
@@ -187,7 +195,8 @@ export function getSessionDetail(groupId: string, id: string) {
   });
 }
 
-export function getSettlementDetail(groupId: string, id: string) {
+/** Detalhe de um fecho. Com `onlyFor` (membros que não são admin), só vêm as transferências desse jogador. */
+export function getSettlementDetail(groupId: string, id: string, onlyFor?: string) {
   const party = { select: { id: true, name: true, avatarColor: true } } as const;
   return db.settlement.findFirst({
     where: { id, groupId },
@@ -197,6 +206,7 @@ export function getSettlementDetail(groupId: string, id: string) {
       closedAt: true,
       _count: { select: { sessions: true } },
       transfers: {
+        where: onlyFor ? involving(onlyFor) : undefined,
         orderBy: [{ paid: "asc" }, { amount: "desc" }],
         select: {
           id: true,

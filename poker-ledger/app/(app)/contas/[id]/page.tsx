@@ -14,7 +14,8 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
   const { viewer, groupId, role } = await requireGroupPage();
   const admin = role === "ADMIN";
   const { id } = await params;
-  const st = await getSettlementDetail(groupId, id);
+  // Membros só veem as transferências em que pagam ou recebem; o admin vê todas.
+  const st = await getSettlementDetail(groupId, id, admin ? undefined : viewer.id);
   if (!st) notFound();
   const total = st.transfers.length;
   const paid = st.transfers.filter((t) => t.paid).length;
@@ -33,7 +34,7 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
 
       <Card className="mb-4">
         <div className="flex items-baseline justify-between">
-          <p className="text-sm text-ivory/80">Pagamentos</p>
+          <p className="text-sm text-ivory/80">{admin ? "Pagamentos" : "Os teus pagamentos"}</p>
           <p className="font-display text-[22px] font-semibold">
             {paid}/{total} <span className="text-sm font-normal text-ivory/80">pagas</span>
           </p>
@@ -52,7 +53,9 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
 
       {total === 0 ? (
         <Card>
-          <EmptyState>Ninguém deve nada a ninguém neste fecho. Raro, mas acontece!</EmptyState>
+          <EmptyState>
+            {admin ? "Ninguém deve nada a ninguém neste fecho. Raro, mas acontece!" : "Não tens nada a pagar nem a receber neste fecho."}
+          </EmptyState>
         </Card>
       ) : (
         <ul className="space-y-3">

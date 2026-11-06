@@ -14,9 +14,10 @@ import { CloseAccountsForm } from "@/components/settle/CloseAccountsForm";
 export const metadata: Metadata = { title: "Contas" };
 
 export default async function Accounts() {
-  const { groupId, role } = await requireGroupPage();
+  const { viewer, groupId, role } = await requireGroupPage();
   const admin = role === "ADMIN";
-  const [open, settlements] = await Promise.all([getOpenState(groupId), getSettlements(groupId)]);
+  // Membros: só contam as transferências em que pagam ou recebem; o admin vê todas.
+  const [open, settlements] = await Promise.all([getOpenState(groupId), getSettlements(groupId, undefined, admin ? undefined : viewer.id)]);
   const valid = open.sessions.length - open.invalid.length;
   const blocked = open.invalid.length > 0;
   const name = (id: string) => open.players.get(id)?.name ?? "?";
@@ -57,7 +58,8 @@ export default async function Accounts() {
               </div>
             )}
 
-            {!blocked && open.preview.length > 0 && (
+            {/* A pré-visualização de quem paga a quem é só para o admin; os membros veem as transferências depois do fecho. */}
+            {!blocked && admin && open.preview.length > 0 && (
               <>
                 <p className="mt-4 text-[13px] font-semibold tracking-wide text-ivory/75 uppercase">Pré-visualização</p>
                 <ul className="mt-2 divide-y divide-white/10">
@@ -80,7 +82,7 @@ export default async function Accounts() {
                 </Sheet>
               ) : (
                 <p className="rounded-2xl bg-ink/40 px-4 py-3 text-center text-sm text-ivory/85">
-                  Só o admin do grupo pode fechar as contas.
+                  Só o admin do grupo pode fechar as contas. Quando fechar, aparecem aqui as tuas transferências: a quem pagas e de quem recebes.
                 </p>
               )}
             </div>
@@ -105,7 +107,7 @@ export default async function Accounts() {
                   </span>
                 </span>
                 <span className="shrink-0 text-sm text-ivory/80">
-                  {st.transfers.length}/{st._count.transfers} pagas
+                  {!admin && st._count.transfers === 0 ? "Nada a acertar" : `${st.transfers.length}/${st._count.transfers} pagas`}
                 </span>
               </Link>
             </li>

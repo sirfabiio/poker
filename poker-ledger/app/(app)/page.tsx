@@ -11,8 +11,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { formatDateTime } from "@/lib/format";
 
 export default async function Home() {
-  const { viewer, groupId, groupName } = await requireGroupPage();
-  const [open, settlements] = await Promise.all([getOpenState(groupId), getSettlements(groupId, 5)]);
+  const { viewer, groupId, groupName, role } = await requireGroupPage();
+  const admin = role === "ADMIN";
+  const [open, settlements] = await Promise.all([getOpenState(groupId), getSettlements(groupId, 5, admin ? undefined : viewer.id)]);
   const mine = open.ranking.find((r) => r.id === viewer.id)?.balance ?? 0;
   const counted = open.sessions.length - open.invalid.length;
   const withResults = open.ranking.filter((r) => r.balance !== 0);
@@ -106,7 +107,7 @@ export default async function Home() {
                   <span className="block text-[13px] text-ivory/75">{formatDateTime(st.closedAt)}</span>
                 </span>
                 <span className="shrink-0 text-sm text-ivory/80">
-                  {st.transfers.length}/{st._count.transfers} pagas
+                  {!admin && st._count.transfers === 0 ? "Nada a acertar" : `${st.transfers.length}/${st._count.transfers} pagas`}
                 </span>
               </Link>
             </li>
